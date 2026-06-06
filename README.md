@@ -24,16 +24,16 @@
 
 | Mão | Símbolos | Descrição |
 |-----|----------|-----------|
-| Royal Flush | 🂡🂾🂽🂻🂺 | A K Q J 10 do mesmo naipe |
+| Royal Flush | 🂡🂮🂭🂫🂪 | A K Q J 10 do mesmo naipe |
 | Straight Flush | 🂩🂨🂧🂦🂥 | 5 cartas em sequência do mesmo naipe |
-| Quadra | ♠♥♦♣ | 4 cartas do mesmo valor |
-| Full House | ♠♠♠♥♥ | Trinca + Par |
-| Flush | ♦♦♦♦♦ | 5 cartas do mesmo naipe |
-| Sequência | 🂵🂴🂳🂲🂱 | 5 cartas em sequência |
-| Trinca | ♣♣♣ | 3 cartas do mesmo valor |
-| Dois Pares | ♠♠♥♥ | Dois pares diferentes |
-| Par | ♦♦ | 2 cartas do mesmo valor |
-| Carta Alta | ♠ | Maior carta na mão |
+| Quadra | 🂡🂱🃁🃑 | 4 cartas do mesmo valor |
+| Full House | 🂡🂱🃁🂮🂾 | Trinca + Par |
+| Flush | 🂡🂩🂵🂳🂢 | 5 cartas do mesmo naipe |
+| Sequência | 🂩🂸🂷🃆🃕 | 5 cartas em sequência de naipes diferentes |
+| Trinca | 🂡🂱🃁 | 3 cartas do mesmo valor |
+| Dois Pares | 🂡🂱🂮🂾 | Dois pares diferentes |
+| Par | 🂡🂱 | 2 cartas do mesmo valor |
+| Carta Alta | 🂡 | A carta mais alta da mão vence |
 
 # Funcionalidades 🛠
 
@@ -65,27 +65,5 @@
 | html5-qrcode | 2.3.8 | Leitura de QR Code |
 | clsx + tailwind-merge | — | Utilitários de classe |
 
-# Como Rodar Localmente 💻
-
-```bash
-# Clone o repositório
-git clone https://github.com/LucasFujarra/Poker-Air.git
-
-# Entre na pasta
-cd Poker-Air
-
-# Instale as dependências
-yarn
-
-# Rode o servidor de desenvolvimento
-yarn dev
-```
-
-# Deploy 🌐
-
-```bash
-# Gera o build e sobe para o GitHub Pages
-yarn deploy
-```
 
 [<img src="https://raw.githubusercontent.com/ismartcoding/plain-app/main/assets/get-it-on-github.png" alt="GitHub" height="80">](https://github.com/LucasFujarra/Poker-Air)
