@@ -81,6 +81,8 @@ export default function JoinRoomScreen({ gameStore, roomId, initialSeat, onJoine
           <div className="flex items-center justify-center gap-2 mb-3">
             <span className="text-2xl text-red-500">♥</span>
             <span className="text-2xl text-white">♠</span>
+            <span className="text-2xl text-red-500">♦</span>
+            <span className="text-2xl text-white">♣</span>
           </div>
           <h1 className="text-3xl font-black text-white mb-1">
             POKER <span className="text-green-400">AIR</span>
@@ -146,6 +148,8 @@ export default function JoinRoomScreen({ gameStore, roomId, initialSeat, onJoine
         <div className="flex items-center justify-center gap-2 mb-3">
           <span className="text-2xl text-red-500">♥</span>
           <span className="text-2xl text-white">♠</span>
+          <span className="text-2xl text-red-500">♦</span>
+          <span className="text-2xl text-white">♣</span>
         </div>
         <h1 className="text-4xl font-black text-white mb-1">
           POKER <span className="text-green-400">AIR</span>
