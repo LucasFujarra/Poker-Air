@@ -1,7 +1,7 @@
 # POKER ♠ AIR
 
 <p align="center">
-  <img src="https://github.com/LucasFujarra/Poker-Air/blob/master/screenshot/background.png">
+  <img src="https://raw.githubusercontent.com/LucasFujarra/Poker-Air/refs/heads/master/src/assets/Screenshot2.png">
 </p>
 
 <p align="center">
