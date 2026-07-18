@@ -11,6 +11,7 @@ export interface MyRoom {
   role: 'host' | 'player';
   name?: string; // Nome do jogador (se player)
   seat?: number;
+  sessionId?: string;
   createdAt: number;
   lastAccess: number;
 }
@@ -49,6 +50,25 @@ export function saveMyRoom(room: MyRoom) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
   } catch { /* ignore */ }
+}
+
+export function getSavedPlayerRoom(code: string): MyRoom | undefined {
+  return getMyRooms().find((room) => room.code === code && room.role === 'player');
+}
+
+export function ensurePlayerSessionId(code: string): string {
+  const existing = getSavedPlayerRoom(code);
+  if (existing?.sessionId) return existing.sessionId;
+
+  const sessionId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `session_${code}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+  if (existing) {
+    saveMyRoom({ ...existing, sessionId });
+  }
+
+  return sessionId;
 }
 
 // Remover sala do histórico

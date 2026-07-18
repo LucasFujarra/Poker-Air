@@ -13,7 +13,7 @@ import { OnlineGameStore } from './game/onlineGameStore';
 import type { GameState, GameConfig, BotDifficulty, PlayerAction } from './game/gameLogic';
 import { DEFAULT_CONFIG, createGameState } from './game/gameLogic';
 import { initFirebase } from './firebase/config';
-import { saveMyRoom } from './game/roomHistory';
+import { ensurePlayerSessionId, saveMyRoom } from './game/roomHistory';
 
 type Screen = 'home' | 'mode' | 'lobby' | 'table' | 'player' | 'joinRoom';
 
@@ -23,11 +23,12 @@ interface IGameStore {
   hostAddPlayer: (name: string, seat: number, isBot?: boolean) => void;
   hostRemovePlayer: (playerId: string) => void;
   hostStartHand: () => void;
-  playerJoin: (name: string, seat: number) => void;
+  playerJoin: (name: string, seat: number, sessionId?: string) => void;
   playerAction: (playerId: string, action: PlayerAction) => void;
   playerLeave: (playerId: string) => void;
   destroy: () => void;
   setBotDifficulty?: (difficulty: BotDifficulty) => void;
+  updateConfig?: (config: GameConfig) => void;
 }
 
 // Detectar URL de jogador (QR code)
@@ -53,9 +54,10 @@ function App() {
   const [screen, setScreen] = useState<Screen>(isPlayerFromUrl ? 'joinRoom' : 'home');
   const [gameState, setGameState] = useState<GameState>(createGameState());
   const [playerSeat, setPlayerSeat] = useState<number>(hashInfo.current?.seat ?? -1);
-  const [config] = useState<GameConfig>(DEFAULT_CONFIG);
+  const [config, setConfig] = useState<GameConfig>(DEFAULT_CONFIG);
   const [roomId, setRoomId] = useState<string>(hashInfo.current?.roomId || '');
   const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>('medium');
+  const [playerSessionId, setPlayerSessionId] = useState<string>('');
   const gameStoreRef = useRef<IGameStore | null>(null);
   const didInit = useRef(false);
 
@@ -73,6 +75,7 @@ function App() {
     store.subscribe((s) => setGameState(s));
     setRoomId(info.roomId);
     setPlayerSeat(info.seat ?? -1);
+    setPlayerSessionId(ensurePlayerSessionId(info.roomId));
     setScreen('joinRoom');
   }, [config]);
 
@@ -112,16 +115,27 @@ function App() {
     gameStoreRef.current = store;
     store.subscribe((s) => setGameState(s));
     setPlayerSeat(-1);
+    setPlayerSessionId(ensurePlayerSessionId(room));
     setScreen('joinRoom');
   }, [config]);
 
-  const handlePlayerJoined = useCallback((seat: number) => {
+  const handlePlayerJoined = useCallback((seat: number, playerName?: string) => {
     setPlayerSeat(seat);
     setScreen('player');
     if (roomId) {
-      saveMyRoom({ code: roomId, role: 'player', seat, createdAt: Date.now(), lastAccess: Date.now() });
+      const sessionId = playerSessionId || ensurePlayerSessionId(roomId);
+      setPlayerSessionId(sessionId);
+      saveMyRoom({
+        code: roomId,
+        role: 'player',
+        seat,
+        name: playerName,
+        sessionId,
+        createdAt: Date.now(),
+        lastAccess: Date.now(),
+      });
     }
-  }, [roomId]);
+  }, [playerSessionId, roomId]);
 
   // ============ LOBBY / TABLE ============
 
@@ -136,6 +150,11 @@ function App() {
   const handleSetBotDifficulty = useCallback((d: BotDifficulty) => {
     setBotDifficulty(d);
     gameStoreRef.current?.setBotDifficulty?.(d);
+  }, []);
+
+  const handleUpdateConfig = useCallback((nextConfig: GameConfig) => {
+    setConfig(nextConfig);
+    gameStoreRef.current?.updateConfig?.(nextConfig);
   }, []);
 
   const handleStartGame = useCallback(() => {
@@ -173,7 +192,9 @@ function App() {
           onAddBot={handleAddBot}
           onRemovePlayer={handleRemovePlayer}
           onSetBotDifficulty={handleSetBotDifficulty}
+          onUpdateConfig={handleUpdateConfig}
           botDifficulty={botDifficulty}
+          config={gameState.config}
           baseUrl={getBaseUrl()}
           roomId={roomId}
           onBack={handleBackToHome}
@@ -209,6 +230,7 @@ function App() {
           gameStore={gameStoreRef.current}
           roomId={roomId}
           initialSeat={playerSeat >= 0 ? playerSeat : undefined}
+          sessionId={playerSessionId}
           onJoined={handlePlayerJoined}
           onBack={handleBackToHome}
         />

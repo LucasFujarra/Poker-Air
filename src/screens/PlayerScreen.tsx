@@ -11,7 +11,7 @@ import type { Card } from '../game/handEvaluator';
 interface IGameStore {
   subscribe: (listener: (state: GameState) => void) => () => void;
   getState: () => GameState;
-  playerJoin: (name: string, seat: number) => void;
+  playerJoin: (name: string, seat: number, sessionId?: string) => void;
   playerAction: (playerId: string, action: PlayerAction) => void;
   playerLeave: (playerId: string) => void;
 }
@@ -94,6 +94,7 @@ export default function PlayerScreen({ seat, gameStore, onLeave }: PlayerScreenP
   const currentTurnPlayer = gameState.currentPlayerIndex >= 0 ? gameState.players[gameState.currentPlayerIndex] : null;
   const [timeLeft, setTimeLeft] = useState(30);
   const [showdownCountdown, setShowdownCountdown] = useState(10);
+  const hadHoleCards = useRef(false);
 
   // Só setar raiseAmount quando COMEÇA a ser minha vez (não a cada update do Firebase)
   const wasMyTurn = useRef(false);
@@ -117,6 +118,16 @@ export default function PlayerScreen({ seat, gameStore, onLeave }: PlayerScreenP
     const i = setInterval(() => setShowdownCountdown(Math.max(0, Math.ceil((gameState.showdownEndTime - Date.now()) / 1000))), 250);
     return () => clearInterval(i);
   }, [gameState.phase, gameState.showdownEndTime]);
+
+  useEffect(() => {
+    const hasHoleCards = !!player && player.holeCards.length > 0 && gameState.phase !== 'waiting';
+
+    if (hasHoleCards && !hadHoleCards.current) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    hadHoleCards.current = hasHoleCards;
+  }, [gameState.phase, player]);
 
   useEffect(() => { if (isMyTurn && navigator.vibrate) navigator.vibrate([200, 100, 200]); }, [isMyTurn]);
 

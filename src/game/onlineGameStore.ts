@@ -206,6 +206,26 @@ export class OnlineGameStore {
     return getCurrentTurnInfo(this.state);
   }
 
+  async updateConfig(config: GameConfig) {
+    const current = await this.readFromFirebase() || this.state;
+    if (current.phase !== 'waiting') return;
+
+    const normalizedState: GameState = {
+      ...current,
+      config,
+      minRaise: config.bigBlind,
+      lastRaiseSize: config.bigBlind,
+      players: current.players.map((player) => ({
+        ...player,
+        chips: config.initialChips,
+      })),
+    };
+
+    this.state = normalizedState;
+    this.notifyListeners();
+    await this.writeToFirebase(normalizedState);
+  }
+
   // =============================================
   // AÇÕES: Qualquer um pode chamar
   // Todas leem do Firebase → modificam → escrevem de volta
@@ -253,13 +273,13 @@ export class OnlineGameStore {
   }
 
   // Jogador entrar: lê do Firebase, adiciona, escreve de volta
-  async playerJoin(name: string, seat: number) {
+  async playerJoin(name: string, seat: number, sessionId?: string) {
     const current = await this.readFromFirebase();
     if (!current) {
       console.error('❌ Sala não encontrada no Firebase');
       return;
     }
-    const newState = addPlayer(current, name, seat, false);
+    const newState = addPlayer(current, name, seat, false, undefined, sessionId);
     this.state = newState;
     this.notifyListeners();
     await this.writeToFirebase(newState);

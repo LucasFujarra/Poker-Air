@@ -2,9 +2,9 @@
 // POKER AIR — Sala de Espera (Online apenas)
 // ================================================================
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import type { GameState, BotDifficulty } from '../game/gameLogic';
+import type { GameState, BotDifficulty, GameConfig } from '../game/gameLogic';
 
 interface LobbyScreenProps {
   gameState: GameState;
@@ -12,7 +12,9 @@ interface LobbyScreenProps {
   onAddBot: (name: string, seat: number) => void;
   onRemovePlayer: (playerId: string) => void;
   onSetBotDifficulty: (difficulty: BotDifficulty) => void;
+  onUpdateConfig: (config: GameConfig) => void;
   botDifficulty: BotDifficulty;
+  config: GameConfig;
   baseUrl: string;
   roomId: string;
   onBack: () => void;
@@ -61,17 +63,30 @@ function QRModal({ isOpen, onClose, url, seat, roomId }: {
 }
 
 export default function LobbyScreen({ 
-  gameState, onStartGame, onAddBot, onRemovePlayer, onSetBotDifficulty, botDifficulty,
+  gameState, onStartGame, onAddBot, onRemovePlayer, onSetBotDifficulty, onUpdateConfig, botDifficulty, config,
   baseUrl, roomId, onBack 
 }: LobbyScreenProps) {
   const [showConfig, setShowConfig] = useState(false);
   const [copiedRoom, setCopiedRoom] = useState(false);
   const [qrModal, setQrModal] = useState<{ isOpen: boolean; seat: number; url: string }>({ isOpen: false, seat: 0, url: '' });
+  const [draftConfig, setDraftConfig] = useState<GameConfig>(config);
   
   const connectedPlayers = gameState.players.filter(p => p.isConnected);
   const botCount = gameState.players.filter(p => p.isBot).length;
   const humanCount = connectedPlayers.length - botCount;
   const canStart = connectedPlayers.length >= 2;
+
+  useEffect(() => {
+    setDraftConfig(config);
+  }, [config]);
+
+  useEffect(() => {
+    if (!qrModal.isOpen) return;
+    const occupied = gameState.players.some((player) => player.seat === qrModal.seat);
+    if (occupied) {
+      setQrModal((current) => ({ ...current, isOpen: false }));
+    }
+  }, [gameState.players, qrModal.isOpen, qrModal.seat]);
 
   const getPlayerUrl = (seat: number) => `${baseUrl}#/room/${roomId}/player/${seat}`;
 
@@ -85,6 +100,23 @@ export default function LobbyScreen({
     navigator.clipboard.writeText(roomId);
     setCopiedRoom(true);
     setTimeout(() => setCopiedRoom(false), 2000);
+  };
+
+  const handleConfigChange = (field: keyof GameConfig, value: string) => {
+    const parsed = Number(value.replace(/\D/g, ''));
+    const safeValue = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    const nextConfig = { ...draftConfig, [field]: safeValue };
+
+    if (field === 'smallBlind' && safeValue > 0 && nextConfig.bigBlind < safeValue) {
+      nextConfig.bigBlind = safeValue * 2;
+    }
+
+    if (field === 'bigBlind' && safeValue > 0 && nextConfig.smallBlind > safeValue) {
+      nextConfig.smallBlind = Math.max(1, Math.floor(safeValue / 2));
+    }
+
+    setDraftConfig(nextConfig);
+    onUpdateConfig(nextConfig);
   };
 
   return (
@@ -125,6 +157,41 @@ export default function LobbyScreen({
 
       {showConfig && (
         <div className="bg-gray-800/80 rounded-2xl p-4 mb-4 w-full max-w-md border border-gray-700">
+          <label className="text-gray-400 text-xs block mb-2">💰 Stack inicial</label>
+          <input
+            type="number"
+            min={100}
+            step={100}
+            value={draftConfig.initialChips}
+            onChange={(e) => handleConfigChange('initialChips', e.target.value)}
+            className="w-full px-4 py-3 mb-3 bg-gray-900 border border-gray-700 rounded-xl text-white font-bold focus:outline-none focus:border-green-500"
+          />
+
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="text-gray-400 text-xs block mb-2">🟡 Small blind</label>
+              <input
+                type="number"
+                min={1}
+                step={25}
+                value={draftConfig.smallBlind}
+                onChange={(e) => handleConfigChange('smallBlind', e.target.value)}
+                className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-xl text-white font-bold focus:outline-none focus:border-green-500"
+              />
+            </div>
+            <div>
+              <label className="text-gray-400 text-xs block mb-2">🔴 Big blind</label>
+              <input
+                type="number"
+                min={1}
+                step={25}
+                value={draftConfig.bigBlind}
+                onChange={(e) => handleConfigChange('bigBlind', e.target.value)}
+                className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-xl text-white font-bold focus:outline-none focus:border-green-500"
+              />
+            </div>
+          </div>
+
           <label className="text-gray-400 text-xs block mb-2">🤖 Dificuldade dos Bots</label>
           <div className="grid grid-cols-3 gap-2">
             {(['easy', 'medium', 'hard'] as BotDifficulty[]).map((diff) => {
@@ -139,6 +206,9 @@ export default function LobbyScreen({
               );
             })}
           </div>
+          <p className="text-gray-500 text-[10px] mt-3 text-center">
+            Padrão atual: {draftConfig.initialChips.toLocaleString()} fichas • blinds {draftConfig.smallBlind}/{draftConfig.bigBlind}
+          </p>
           <p className="text-gray-500 text-[10px] mt-2 text-center">{DIFFICULTY_INFO[botDifficulty].desc}</p>
         </div>
       )}

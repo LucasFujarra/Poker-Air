@@ -17,6 +17,7 @@ export interface Player {
   id: string;
   name: string;
   seat: number; // 0-8
+  sessionId?: string;
   chips: number;
   holeCards: Card[];
   currentBet: number; // Aposta na rodada atual
@@ -28,6 +29,7 @@ export interface Player {
   hasActed: boolean; // Se já agiu nesta rodada de apostas
   isBot: boolean; // Se é um bot automático
   botDifficulty?: BotDifficulty; // Dificuldade do bot
+  timeoutFoldCount: number;
   handResult?: HandResult;
   isWinner?: boolean;
   winAmount?: number;
@@ -40,6 +42,7 @@ export type GamePhase = 'waiting' | 'preflop' | 'flop' | 'turn' | 'river' | 'sho
 export interface PlayerAction {
   type: 'fold' | 'check' | 'call' | 'raise' | 'allin';
   amount?: number;
+  source?: 'manual' | 'timeout';
 }
 
 // Side pot para situações de all-in
@@ -62,6 +65,7 @@ export interface PendingPlayer {
   seat: number;
   isBot: boolean;
   botDifficulty?: BotDifficulty;
+  sessionId?: string;
 }
 
 // Estado completo do jogo
@@ -138,10 +142,21 @@ export function addPlayer(
   name: string, 
   seat: number, 
   isBot: boolean = false, 
-  botDifficulty?: BotDifficulty
+  botDifficulty?: BotDifficulty,
+  sessionId?: string
 ): GameState {
+  const existingPlayer = state.players.find(p => p.seat === seat);
+  if (existingPlayer) {
+    if (!isBot && sessionId && existingPlayer.sessionId === sessionId) {
+      return {
+        ...state,
+        players: state.players.map(p => p.seat === seat ? { ...p, name, isConnected: true, sessionId } : p),
+      };
+    }
+    return state;
+  }
+
   // Verificar se assento já ocupado ou pendente
-  if (state.players.find(p => p.seat === seat)) return state;
   if (state.pendingJoins.find(p => p.seat === seat)) return state;
   if (state.players.length + state.pendingJoins.length >= 9) return state;
   
@@ -149,18 +164,19 @@ export function addPlayer(
   if (isHandInProgress(state)) {
     return {
       ...state,
-      pendingJoins: [...state.pendingJoins, { name, seat, isBot, botDifficulty }],
+      pendingJoins: [...state.pendingJoins, { name, seat, isBot, botDifficulty, sessionId }],
     };
   }
 
   // Adicionar direto
   const id = `player_${seat}_${Date.now()}`;
   const newPlayer: Player = {
-    id, name, seat,
+    id, name, seat, sessionId,
     chips: state.config.initialChips,
     holeCards: [], currentBet: 0, totalBetInHand: 0,
     isFolded: false, isAllIn: false, isConnected: true,
     isSittingOut: false, hasActed: false, isBot, botDifficulty,
+    timeoutFoldCount: 0,
   };
   
   return {
@@ -219,12 +235,13 @@ function processPendingQueues(state: GameState): GameState {
     
     const id = `player_${pending.seat}_${Date.now() + pending.seat}`;
     const newPlayer: Player = {
-      id, name: pending.name, seat: pending.seat,
+      id, name: pending.name, seat: pending.seat, sessionId: pending.sessionId,
       chips: newState.config.initialChips,
       holeCards: [], currentBet: 0, totalBetInHand: 0,
       isFolded: false, isAllIn: false, isConnected: true,
       isSittingOut: false, hasActed: false,
       isBot: pending.isBot, botDifficulty: pending.botDifficulty,
+      timeoutFoldCount: 0,
     };
     newState.players = [...newState.players, newPlayer].sort((a, b) => a.seat - b.seat);
   }
@@ -405,6 +422,11 @@ export function processAction(state: GameState, playerId: string, action: Player
     case 'fold': {
       newPlayers[playerIdx].isFolded = true;
       newPlayers[playerIdx].hasActed = true;
+      if (action.source === 'timeout') {
+        newPlayers[playerIdx].timeoutFoldCount += 1;
+      } else {
+        newPlayers[playerIdx].timeoutFoldCount = 0;
+      }
       lastAction = { playerId, action: 'fold' };
       break;
     }
@@ -413,6 +435,7 @@ export function processAction(state: GameState, playerId: string, action: Player
       // Só pode dar check se não há aposta pendente
       if (player.currentBet < state.currentBet) return state;
       newPlayers[playerIdx].hasActed = true;
+      newPlayers[playerIdx].timeoutFoldCount = 0;
       lastAction = { playerId, action: 'check' };
       break;
     }
@@ -424,6 +447,7 @@ export function processAction(state: GameState, playerId: string, action: Player
       newPlayers[playerIdx].totalBetInHand += callAmount;
       newPlayers[playerIdx].isAllIn = newPlayers[playerIdx].chips <= 0;
       newPlayers[playerIdx].hasActed = true;
+      newPlayers[playerIdx].timeoutFoldCount = 0;
       newPot += callAmount;
       lastAction = { playerId, action: 'call', amount: callAmount };
       break;
@@ -444,6 +468,7 @@ export function processAction(state: GameState, playerId: string, action: Player
       newPlayers[playerIdx].totalBetInHand += actualAmount;
       newPlayers[playerIdx].isAllIn = newPlayers[playerIdx].chips <= 0;
       newPlayers[playerIdx].hasActed = true;
+      newPlayers[playerIdx].timeoutFoldCount = 0;
       newPot += actualAmount;
       newCurrentBet = actualTotalBet;
       newLastRaiseSize = raiseSize;
@@ -469,6 +494,7 @@ export function processAction(state: GameState, playerId: string, action: Player
       newPlayers[playerIdx].totalBetInHand += allInAmount;
       newPlayers[playerIdx].isAllIn = true;
       newPlayers[playerIdx].hasActed = true;
+      newPlayers[playerIdx].timeoutFoldCount = 0;
       newPot += allInAmount;
       
       if (newTotalBet > state.currentBet) {
@@ -818,7 +844,12 @@ export function checkTimeout(state: GameState): GameState {
   if (elapsed >= state.config.turnTimer) {
     const currentPlayer = state.players[state.currentPlayerIndex];
     if (currentPlayer && !currentPlayer.isFolded && !currentPlayer.isAllIn) {
-      return processAction(state, currentPlayer.id, { type: 'fold' });
+      const foldedState = processAction(state, currentPlayer.id, { type: 'fold', source: 'timeout' });
+      const updatedPlayer = foldedState.players.find(p => p.id === currentPlayer.id);
+      if (updatedPlayer && updatedPlayer.timeoutFoldCount >= 3) {
+        return removePlayer(foldedState, currentPlayer.id, true);
+      }
+      return foldedState;
     }
   }
   

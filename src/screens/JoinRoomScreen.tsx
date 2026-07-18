@@ -4,13 +4,14 @@
 // Se veio pelo QR code com assento, pula direto para o nome
 // ================================================================
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { GameState, PlayerAction } from '../game/gameLogic';
+import { getSavedPlayerRoom } from '../game/roomHistory';
 
 interface IGameStore {
   subscribe: (listener: (state: GameState) => void) => () => void;
   getState: () => GameState;
-  playerJoin: (name: string, seat: number) => void;
+  playerJoin: (name: string, seat: number, sessionId?: string) => void;
   playerAction: (playerId: string, action: PlayerAction) => void;
 }
 
@@ -20,20 +21,24 @@ interface JoinRoomScreenProps {
   gameStore: IGameStore;
   roomId: string;
   initialSeat?: number; // Assento pré-selecionado (QR code)
-  onJoined: (seat: number) => void;
+  sessionId?: string;
+  onJoined: (seat: number, playerName?: string) => void;
   onBack: () => void;
 }
 
 type Step = 'seat' | 'name';
 
-export default function JoinRoomScreen({ gameStore, roomId, initialSeat, onJoined, onBack }: JoinRoomScreenProps) {
+export default function JoinRoomScreen({ gameStore, roomId, initialSeat, sessionId, onJoined, onBack }: JoinRoomScreenProps) {
   // Se veio com assento do QR code, pula direto para nome
   const hasPredefinedSeat = initialSeat !== undefined && initialSeat >= 0;
+  const savedRoom = useMemo(() => getSavedPlayerRoom(roomId), [roomId]);
+  const savedSeat = savedRoom?.seat ?? -1;
+  const initialSelectedSeat = hasPredefinedSeat ? initialSeat : savedSeat;
   
-  const [step, setStep] = useState<Step>(hasPredefinedSeat ? 'name' : 'seat');
+  const [step, setStep] = useState<Step>(initialSelectedSeat >= 0 ? 'name' : 'seat');
   const [gameState, setGameState] = useState<GameState>(gameStore.getState());
-  const [selectedSeat, setSelectedSeat] = useState<number>(hasPredefinedSeat ? initialSeat : -1);
-  const [playerName, setPlayerName] = useState('');
+  const [selectedSeat, setSelectedSeat] = useState<number>(initialSelectedSeat);
+  const [playerName, setPlayerName] = useState(savedRoom?.name || '');
 
   useEffect(() => {
     const unsub = gameStore.subscribe((state) => setGameState(state));
@@ -44,11 +49,45 @@ export default function JoinRoomScreen({ gameStore, roomId, initialSeat, onJoine
 
   // Se assento pré-definido está ocupado, voltar pra seleção
   useEffect(() => {
-    if (hasPredefinedSeat && occupiedSeats.includes(initialSeat)) {
+    if (!hasPredefinedSeat || initialSeat === undefined) return;
+    const occupant = gameState.players.find((p) => p.seat === initialSeat);
+    const isMySavedSession = occupant && !occupant.isBot && occupant.sessionId && occupant.sessionId === sessionId;
+
+    if (isMySavedSession) {
+      setSelectedSeat(initialSeat);
+      setPlayerName(occupant.name);
+      onJoined(initialSeat, occupant.name);
+      return;
+    }
+
+    if (occupant && !isMySavedSession) {
       setStep('seat');
       setSelectedSeat(-1);
     }
-  }, [hasPredefinedSeat, initialSeat, occupiedSeats]);
+  }, [gameState.players, hasPredefinedSeat, initialSeat, onJoined, sessionId]);
+
+  useEffect(() => {
+    if (selectedSeat < 0) return;
+    const occupant = gameState.players.find((p) => p.seat === selectedSeat);
+    if (occupant && !occupant.isBot && occupant.sessionId === sessionId) {
+      setPlayerName(occupant.name);
+      onJoined(selectedSeat, occupant.name);
+      return;
+    }
+
+    if (occupant && occupant.sessionId !== sessionId) {
+      setStep('seat');
+      if (!hasPredefinedSeat) {
+        setSelectedSeat(-1);
+      }
+    }
+  }, [gameState.players, hasPredefinedSeat, onJoined, selectedSeat, sessionId]);
+
+  useEffect(() => {
+    if (!playerName && savedRoom?.name) {
+      setPlayerName(savedRoom.name);
+    }
+  }, [playerName, savedRoom]);
 
   const handleSelectSeat = (seat: number) => {
     setSelectedSeat(seat);
@@ -57,8 +96,8 @@ export default function JoinRoomScreen({ gameStore, roomId, initialSeat, onJoine
 
   const handleJoin = () => {
     if (!playerName.trim() || selectedSeat < 0) return;
-    gameStore.playerJoin(playerName.trim(), selectedSeat);
-    onJoined(selectedSeat);
+    gameStore.playerJoin(playerName.trim(), selectedSeat, sessionId);
+    onJoined(selectedSeat, playerName.trim());
   };
 
   // ==========================================
