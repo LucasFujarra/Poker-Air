@@ -20,6 +20,7 @@ export default function HomeScreen({ onPlay }: HomeScreenProps) {
 
   return (
     <div className="min-h-screen bg-[#0a0e17] flex flex-col items-center justify-center relative overflow-hidden select-none">
+
       {/* Partículas de fundo */}
       <div className="absolute inset-0 pointer-events-none">
         {/* Gradiente radial central */}

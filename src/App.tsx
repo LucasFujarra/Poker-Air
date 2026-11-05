@@ -9,6 +9,8 @@ import LobbyScreen from './screens/LobbyScreen';
 import TableScreen from './screens/TableScreen';
 import PlayerScreen from './screens/PlayerScreen';
 import JoinRoomScreen from './screens/JoinRoomScreen';
+import { useGameSounds } from './hooks/useGameSounds';
+import { installAudioUnlock, unlockAudio } from './audio/gameAudio';
 import { OnlineGameStore } from './game/onlineGameStore';
 import type { GameState, GameConfig, BotDifficulty, PlayerAction } from './game/gameLogic';
 import { DEFAULT_CONFIG, createGameState } from './game/gameLogic';
@@ -60,6 +62,7 @@ function GameApp() {
   const [playerSessionId, setPlayerSessionId] = useState<string>('');
   const gameStoreRef = useRef<IGameStore | null>(null);
   const didInit = useRef(false);
+  useGameSounds(gameState, { host: true, enabled: screen === 'lobby' || screen === 'table' });
 
   // Jogador entrando via QR code / URL
   useEffect(() => {
@@ -84,7 +87,7 @@ function GameApp() {
 
   // ============ NAVEGAÇÃO ============
 
-  const handlePlay = useCallback(() => setScreen('mode'), []);
+  const handlePlay = useCallback(() => { unlockAudio(); setScreen('mode'); }, []);
 
   const handleBackToHome = useCallback(() => {
     gameStoreRef.current?.destroy();
@@ -159,11 +162,13 @@ function GameApp() {
   }, []);
 
   const handleStartGame = useCallback(() => {
+    unlockAudio();
     gameStoreRef.current?.hostStartHand();
     setScreen('table');
   }, []);
 
   const handleNextHand = useCallback(() => {
+    unlockAudio();
     gameStoreRef.current?.hostStartHand();
   }, []);
 
@@ -260,6 +265,7 @@ function GameApp() {
 }
 
 export default function App() {
+  useEffect(() => installAudioUnlock(), []);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {

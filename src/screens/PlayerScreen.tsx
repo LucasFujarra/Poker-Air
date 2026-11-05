@@ -3,6 +3,7 @@
 // Layout compacto: tudo visível sem scroll
 // ================================================================
 
+import { useGameSounds } from '../hooks/useGameSounds';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { GameState, PlayerAction } from '../game/gameLogic';
 import { getCurrentTurnInfo, getCardDisplay } from '../game/gameLogic';
@@ -83,6 +84,8 @@ export default function PlayerScreen({ seat, gameStore, onLeave }: PlayerScreenP
   const [showLeaveModal, setShowLeaveModal] = useState(false);
 
   useEffect(() => { return gameStore.subscribe((s) => setGameState(s)); }, [gameStore]);
+
+  useGameSounds(gameState, { seat });
 
   const tableTheme = getTableTheme(gameState.config.tableColor);
   const screenBackground = {
@@ -178,6 +181,7 @@ export default function PlayerScreen({ seat, gameStore, onLeave }: PlayerScreenP
   if (!isJoined && !isPending) {
     return (
       <div className="min-h-screen bg-[#0a0e17] flex flex-col items-center justify-center p-6" style={screenBackground}>
+
         <button onClick={onLeave} className="absolute top-4 left-4 text-gray-500 hover:text-gray-300 text-sm">← Voltar</button>
         <div className="text-center mb-8">
           <h1 className="text-4xl font-black text-white mb-1">POKER <span className="text-green-400">AIR</span></h1>
@@ -199,6 +203,7 @@ export default function PlayerScreen({ seat, gameStore, onLeave }: PlayerScreenP
   if (isPending || (isJoined && !player)) {
     return (
       <div className="min-h-screen bg-[#0a0e17] flex flex-col items-center justify-center p-6" style={screenBackground}>
+
         <div className="text-4xl animate-pulse mb-4">⏳</div>
         <div className="text-yellow-400 text-lg font-bold mb-2">Esperando a próxima mão...</div>
         <button onClick={onLeave} className="mt-6 px-6 py-2 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded-xl text-sm border border-gray-700">Desistir</button>
@@ -210,6 +215,7 @@ export default function PlayerScreen({ seat, gameStore, onLeave }: PlayerScreenP
   if (gameState.phase === 'waiting') {
     return (
       <div className="min-h-screen bg-[#0a0e17] flex flex-col items-center justify-center p-6" style={screenBackground}>
+
         <LeaveModal isOpen={showLeaveModal} onConfirm={handleLeave} onCancel={() => setShowLeaveModal(false)} />
         {emojiControl}
         <div className="text-green-400 text-xl font-bold mb-1">Olá, {player?.name}!</div>
@@ -223,6 +229,7 @@ export default function PlayerScreen({ seat, gameStore, onLeave }: PlayerScreenP
   if (isBusted) {
     return (
       <div className="min-h-screen bg-[#0a0e17] flex flex-col items-center justify-center p-6" style={screenBackground}>
+
         <div className="text-6xl mb-4">💸</div>
         <h2 className="text-2xl font-black text-red-400 mb-2">Saldo Insuficiente</h2>
         <p className="text-gray-400 mb-6">Eliminado da partida.</p>
@@ -236,6 +243,7 @@ export default function PlayerScreen({ seat, gameStore, onLeave }: PlayerScreenP
   // ==========================================
   return (
     <div className="h-[100dvh] bg-[#0a0e17] flex flex-col overflow-hidden relative" style={screenBackground}>
+
       <LeaveModal isOpen={showLeaveModal} onConfirm={handleLeave} onCancel={() => setShowLeaveModal(false)} />
 
       {/* Botão sair (X) */}

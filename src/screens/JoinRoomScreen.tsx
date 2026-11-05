@@ -5,6 +5,7 @@
 // ================================================================
 
 import { useState, useEffect, useMemo } from 'react';
+import { unlockAudio } from '../audio/gameAudio';
 import type { GameState, PlayerAction } from '../game/gameLogic';
 import { getSavedPlayerRoom } from '../game/roomHistory';
 import PlayerEmojiPicker from '../components/PlayerEmojiPicker';
@@ -99,6 +100,7 @@ export default function JoinRoomScreen({ gameStore, roomId, initialSeat, session
 
   const handleJoin = async () => {
     if (!playerName.trim() || selectedSeat < 0 || joining) return;
+    unlockAudio();
     setJoining(true);
     setJoinError('');
     try {

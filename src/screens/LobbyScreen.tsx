@@ -129,7 +129,10 @@ export default function LobbyScreen({
       {/* Header */}
       <div className="w-full max-w-3xl flex items-center justify-between mb-4">
         <button onClick={onBack} className="text-gray-500 hover:text-gray-300 text-sm">← Voltar</button>
-        <div className="bg-green-900/50 text-green-400 border border-green-700/30 px-3 py-1 rounded-full text-xs font-bold">🌐 Online</div>
+        <div className="flex items-center gap-3">
+
+          <div className="bg-green-900/50 text-green-400 border border-green-700/30 px-3 py-1 rounded-full text-xs font-bold">🌐 Online</div>
+        </div>
       </div>
 
       {/* Título */}

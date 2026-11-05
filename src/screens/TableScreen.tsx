@@ -212,6 +212,7 @@ export default function TableScreen({ gameState, onNextHand, onBackToLobby, onAd
           <span className="text-white font-black text-base md:text-lg">POKER <span className="text-green-400">AIR</span></span>
         </div>
         <div className="flex items-center gap-3">
+
           <span className="text-gray-400 text-sm font-mono">Mão #{gameState.handNumber}</span>
           <button onClick={() => setShowPlayers(true)} className="flex items-center gap-1.5 px-4 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg border border-gray-700">
             <span className="text-sm">👥</span><span className="text-white text-sm font-bold">{gameState.players.length} jogadores</span>
