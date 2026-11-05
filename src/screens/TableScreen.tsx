@@ -110,12 +110,11 @@ function PlayerCard({ player, isTurn, isDealer, isSB, isBB, isWin, isShowdown, t
 
   return (
     <div className="flex flex-col items-center">
-      {/* Badges — MAIOR */}
-      <div className="flex gap-1 mb-1 h-5">
-        {player.isBot && <span className="bg-orange-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full leading-none">🤖</span>}
-        {isDealer && <span className="bg-yellow-300 text-black text-[9px] font-black px-2 py-0.5 rounded-full leading-none">D</span>}
-        {isSB && <span className="bg-blue-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full leading-none">SB</span>}
-        {isBB && <span className="bg-orange-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full leading-none">BB</span>}
+      {/* Posições — espaço fixo e rótulos centralizados */}
+      <div className="flex w-full items-center justify-center gap-1 mb-1 h-5">
+        {isDealer && <span className="inline-flex h-5 min-w-5 items-center justify-center bg-yellow-300 text-black text-[9px] font-black px-2 rounded-full leading-none">D</span>}
+        {isSB && <span className="inline-flex h-5 min-w-5 items-center justify-center bg-blue-500 text-white text-[9px] font-bold px-2 rounded-full leading-none">SB</span>}
+        {isBB && <span className="inline-flex h-5 min-w-5 items-center justify-center bg-orange-500 text-white text-[9px] font-bold px-2 rounded-full leading-none">BB</span>}
       </div>
 
       {/* Card — altura fixa, MAIOR */}

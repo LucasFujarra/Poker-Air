@@ -4,6 +4,7 @@
 // ================================================================
 
 import { useState, useEffect } from 'react';
+import { version } from '../../package.json';
 
 interface HomeScreenProps {
   onPlay: () => void;
@@ -102,7 +103,7 @@ export default function HomeScreen({ onPlay }: HomeScreenProps) {
 
       {/* Footer */}
       <div className="absolute bottom-4 text-gray-800 text-[10px] tracking-widest">
-        POKER AIR v1.0 - Lucas Fujarra
+        POKER AIR v{version} - Lucas Fujarra
       </div>
     </div>
   );
