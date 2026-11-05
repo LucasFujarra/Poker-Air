@@ -23,7 +23,7 @@ interface IGameStore {
   hostAddPlayer: (name: string, seat: number, isBot?: boolean) => void;
   hostRemovePlayer: (playerId: string) => void;
   hostStartHand: () => void;
-  playerJoin: (name: string, seat: number, sessionId?: string) => Promise<void>;
+  playerJoin: (name: string, seat: number, sessionId?: string, emoji?: string) => Promise<void>;
   playerAction: (playerId: string, action: PlayerAction) => Promise<void>;
   playerLeave: (playerId: string) => Promise<void>;
   destroy: () => void;

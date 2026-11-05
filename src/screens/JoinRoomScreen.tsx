@@ -7,15 +7,15 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { GameState, PlayerAction } from '../game/gameLogic';
 import { getSavedPlayerRoom } from '../game/roomHistory';
+import PlayerEmojiPicker from '../components/PlayerEmojiPicker';
+import { SEAT_EMOJIS, getPlayerEmoji } from '../game/playerEmoji';
 
 interface IGameStore {
   subscribe: (listener: (state: GameState) => void) => () => void;
   getState: () => GameState;
-  playerJoin: (name: string, seat: number, sessionId?: string) => Promise<void>;
+  playerJoin: (name: string, seat: number, sessionId?: string, emoji?: string) => Promise<void>;
   playerAction: (playerId: string, action: PlayerAction) => Promise<void>;
 }
-
-const SEAT_EMOJIS = ['🎯', '🎲', '🃏', '🎰', '🏆', '💎', '🔥', '⭐', '🎪'];
 
 interface JoinRoomScreenProps {
   gameStore: IGameStore;
@@ -40,6 +40,7 @@ export default function JoinRoomScreen({ gameStore, roomId, initialSeat, session
   const [selectedSeat, setSelectedSeat] = useState<number>(initialSelectedSeat);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState('');
+  const [selectedEmoji, setSelectedEmoji] = useState('');
   const [playerName, setPlayerName] = useState(savedRoom?.name || '');
 
   useEffect(() => {
@@ -101,7 +102,7 @@ export default function JoinRoomScreen({ gameStore, roomId, initialSeat, session
     setJoining(true);
     setJoinError('');
     try {
-      await gameStore.playerJoin(playerName.trim(), selectedSeat, sessionId);
+      await gameStore.playerJoin(playerName.trim(), selectedSeat, sessionId, selectedEmoji || SEAT_EMOJIS[selectedSeat]);
       onJoined(selectedSeat, playerName.trim());
     } catch (error) {
       setJoinError(error instanceof Error ? error.message : 'Não foi possível entrar na sala.');
@@ -160,7 +161,7 @@ export default function JoinRoomScreen({ gameStore, roomId, initialSeat, session
                 {isOccupied ? (
                   <>
                     <span className="text-2xl mb-1">
-                      {occupant?.isBot ? '🤖' : SEAT_EMOJIS[i]}
+                      {occupant ? getPlayerEmoji(occupant) : SEAT_EMOJIS[i]}
                     </span>
                     <span className="text-gray-500 text-xs font-bold truncate max-w-[80px]">
                       {occupant?.name || '---'}
@@ -203,9 +204,11 @@ export default function JoinRoomScreen({ gameStore, roomId, initialSeat, session
         </h1>
 
         <div className="flex items-center justify-center gap-3 mt-4">
-          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-600 to-amber-800 border-2 border-amber-500 flex items-center justify-center shadow-lg">
-            <span className="text-xl">{SEAT_EMOJIS[selectedSeat]}</span>
-          </div>
+          <PlayerEmojiPicker
+            emoji={selectedEmoji || SEAT_EMOJIS[selectedSeat] || '🙂'}
+            onChange={setSelectedEmoji}
+            disabled={joining}
+          />
           <div className="text-left">
             <p className="text-white font-bold">Assento {selectedSeat + 1}</p>
             <p className="text-gray-500 text-xs">Sala {roomId}</p>

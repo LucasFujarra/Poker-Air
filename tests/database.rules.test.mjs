@@ -69,6 +69,9 @@ test('rejeita pedidos inválidos e valores de aposta inválidos', async () => {
   const target = ref(player, `${roomPath}/requests/player`);
   for (const request of [
     { type: 'join', name: 'Ana', seat: 9 },
+    { type: 'join', name: 'Ana', seat: 0, emoji: 'a'.repeat(33) },
+    { type: 'join', name: 'Ana', seat: 0, emoji: 123 },
+    { type: 'join', name: 'Ana', seat: 0, emoji: '' },
     { type: 'join', name: 'Ana', seat: 0.5 },
     { type: 'join', name: 'a'.repeat(13), seat: 0 },
     { type: 'admin' },
@@ -91,4 +94,12 @@ test('um segundo anfitrião não pode tomar posse de uma sala existente', async 
   await assertFails(set(ref(db('outsider'), roomPath), { ...room(), hostUid: 'outsider' }));
   await assertSucceeds(get(ref(db('outsider'), `${roomPath}/ts`)));
   await assertFails(get(ref(db(), `${roomPath}/ts`)));
+});
+
+test('aceita emoji no pedido de entrada e na atualização do próprio avatar', async () => {
+  const player = await admit();
+  const target = ref(player, `${roomPath}/requests/player`);
+  await assertSucceeds(set(target, { type: 'join', id: 'avatar-1', name: 'Ana', seat: 0, emoji: '👩🏽‍🚀' }));
+  await assertSucceeds(remove(ref(db('host'), `${roomPath}/requests/player`)));
+  await assertSucceeds(set(target, { type: 'join', id: 'avatar-2', name: 'Ana', seat: 0, emoji: '🦊' }));
 });

@@ -230,10 +230,17 @@ export class OnlineGameStore {
   }
 
   async updateConfig(config: GameConfig) {
-    await this.mutate(current => current.phase !== 'waiting' ? current : ({
-      ...current, config, minRaise: config.bigBlind, lastRaiseSize: config.bigBlind,
-      players: current.players.map(player => ({ ...player, chips: config.initialChips })),
-    }));
+    await this.mutate(current => {
+      // A aparência pode mudar durante a partida sem alterar fichas ou apostas.
+      if (current.phase !== 'waiting') {
+        return { ...current, config: { ...current.config, tableColor: config.tableColor ?? 'green' } };
+      }
+      return {
+        ...current, config, minRaise: config.bigBlind, lastRaiseSize: config.bigBlind,
+        players: current.config.initialChips === config.initialChips ? current.players
+          : current.players.map(player => ({ ...player, chips: config.initialChips })),
+      };
+    });
   }
 
   async hostAddPlayer(name: string, seat: number, isBot: boolean = false) {
@@ -256,8 +263,8 @@ export class OnlineGameStore {
     await this.mutate(current => processAction(current, playerId, action));
   }
 
-  async playerJoin(name: string, seat: number, _sessionId?: string) {
-    await this.sendRequest({ type: 'join', name, seat });
+  async playerJoin(name: string, seat: number, _sessionId?: string, emoji?: string) {
+    await this.sendRequest({ type: 'join', name, seat, ...(emoji ? { emoji } : {}) });
     const joined = [...this.state.players, ...this.state.pendingJoins].some(p => p.sessionId === this.uid && p.seat === seat);
     if (!joined) throw new Error('Assento indisponível. Escolha outro assento.');
   }

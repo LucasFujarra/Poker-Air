@@ -7,11 +7,14 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { GameState, PlayerAction } from '../game/gameLogic';
 import { getCurrentTurnInfo, getCardDisplay } from '../game/gameLogic';
 import type { Card } from '../game/handEvaluator';
+import PlayerEmojiPicker from '../components/PlayerEmojiPicker';
+import { getPlayerEmoji } from '../game/playerEmoji';
+import { getTableTheme } from '../game/tableThemes';
 
 interface IGameStore {
   subscribe: (listener: (state: GameState) => void) => () => void;
   getState: () => GameState;
-  playerJoin: (name: string, seat: number, sessionId?: string) => Promise<void>;
+  playerJoin: (name: string, seat: number, sessionId?: string, emoji?: string) => Promise<void>;
   playerAction: (playerId: string, action: PlayerAction) => Promise<void>;
   playerLeave: (playerId: string) => Promise<void>;
 }
@@ -80,6 +83,11 @@ export default function PlayerScreen({ seat, gameStore, onLeave }: PlayerScreenP
   const [showLeaveModal, setShowLeaveModal] = useState(false);
 
   useEffect(() => { return gameStore.subscribe((s) => setGameState(s)); }, [gameStore]);
+
+  const tableTheme = getTableTheme(gameState.config.tableColor);
+  const screenBackground = {
+    background: `linear-gradient(160deg, ${tableTheme.felt[0]} 0%, ${tableTheme.felt[2]} 40%, #0a0e17 100%)`,
+  };
 
   const player = gameState.players.find(p => p.seat === seat);
   const playerId = player?.id || '';
@@ -151,12 +159,25 @@ export default function PlayerScreen({ seat, gameStore, onLeave }: PlayerScreenP
   const isTied = isShowdown && gameState.winners.length > 1 && gameState.winners.some(w => w.playerId === playerId);
   const isLoser = isShowdown && !isFolded && player && !isWinner && !isTied;
 
+  const emojiControl = player && (
+    <div className="flex items-center justify-center gap-3 mb-3">
+      <PlayerEmojiPicker
+        emoji={getPlayerEmoji(player)}
+        onChange={emoji => gameStore.playerJoin(player.name, seat, undefined, emoji)}
+      />
+      <div className="min-w-0 text-left">
+        <div className="max-w-[200px] truncate text-white font-bold" title={player.name}>{player.name}</div>
+        <div className="text-gray-400 text-sm">Assento {seat + 1}</div>
+      </div>
+    </div>
+  );
+
   // ==========================================
   // TELA DE ENTRADA
   // ==========================================
   if (!isJoined && !isPending) {
     return (
-      <div className="min-h-screen bg-[#0a0e17] flex flex-col items-center justify-center p-6">
+      <div className="min-h-screen bg-[#0a0e17] flex flex-col items-center justify-center p-6" style={screenBackground}>
         <button onClick={onLeave} className="absolute top-4 left-4 text-gray-500 hover:text-gray-300 text-sm">← Voltar</button>
         <div className="text-center mb-8">
           <h1 className="text-4xl font-black text-white mb-1">POKER <span className="text-green-400">AIR</span></h1>
@@ -177,7 +198,7 @@ export default function PlayerScreen({ seat, gameStore, onLeave }: PlayerScreenP
   // PENDENTE
   if (isPending || (isJoined && !player)) {
     return (
-      <div className="min-h-screen bg-[#0a0e17] flex flex-col items-center justify-center p-6">
+      <div className="min-h-screen bg-[#0a0e17] flex flex-col items-center justify-center p-6" style={screenBackground}>
         <div className="text-4xl animate-pulse mb-4">⏳</div>
         <div className="text-yellow-400 text-lg font-bold mb-2">Esperando a próxima mão...</div>
         <button onClick={onLeave} className="mt-6 px-6 py-2 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded-xl text-sm border border-gray-700">Desistir</button>
@@ -188,9 +209,9 @@ export default function PlayerScreen({ seat, gameStore, onLeave }: PlayerScreenP
   // WAITING
   if (gameState.phase === 'waiting') {
     return (
-      <div className="min-h-screen bg-[#0a0e17] flex flex-col items-center justify-center p-6">
+      <div className="min-h-screen bg-[#0a0e17] flex flex-col items-center justify-center p-6" style={screenBackground}>
         <LeaveModal isOpen={showLeaveModal} onConfirm={handleLeave} onCancel={() => setShowLeaveModal(false)} />
-        <div className="text-4xl animate-pulse mb-4">🃏</div>
+        {emojiControl}
         <div className="text-green-400 text-xl font-bold mb-1">Olá, {player?.name}!</div>
         <div className="text-gray-400 mb-4">Aguardando início...</div>
         <button onClick={() => setShowLeaveModal(true)} className="mt-4 px-6 py-2 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded-xl text-sm border border-gray-700">Sair da mesa</button>
@@ -201,7 +222,7 @@ export default function PlayerScreen({ seat, gameStore, onLeave }: PlayerScreenP
   // BUSTED
   if (isBusted) {
     return (
-      <div className="min-h-screen bg-[#0a0e17] flex flex-col items-center justify-center p-6">
+      <div className="min-h-screen bg-[#0a0e17] flex flex-col items-center justify-center p-6" style={screenBackground}>
         <div className="text-6xl mb-4">💸</div>
         <h2 className="text-2xl font-black text-red-400 mb-2">Saldo Insuficiente</h2>
         <p className="text-gray-400 mb-6">Eliminado da partida.</p>
@@ -214,14 +235,15 @@ export default function PlayerScreen({ seat, gameStore, onLeave }: PlayerScreenP
   // TELA DE JOGO — Layout compacto, sem scroll
   // ==========================================
   return (
-    <div className="h-[100dvh] bg-[#0a0e17] flex flex-col overflow-hidden relative">
+    <div className="h-[100dvh] bg-[#0a0e17] flex flex-col overflow-hidden relative" style={screenBackground}>
       <LeaveModal isOpen={showLeaveModal} onConfirm={handleLeave} onCancel={() => setShowLeaveModal(false)} />
 
       {/* Botão sair (X) */}
       <button onClick={() => setShowLeaveModal(true)} className="absolute top-2 right-2 z-30 w-8 h-8 rounded-full bg-gray-800/80 hover:bg-red-900/80 text-gray-500 hover:text-red-400 flex items-center justify-center text-sm border border-gray-700">✕</button>
 
       {/* === HEADER: Pot + Status === */}
-      <div className={`px-4 pt-3 pb-2 shrink-0 ${isMyTurn ? 'bg-gradient-to-b from-yellow-900/40 to-transparent' : ''}`}>
+      <div className="px-4 pt-3 pb-2 shrink-0" style={isMyTurn ? { background: `linear-gradient(to bottom, ${tableTheme.accent}66, transparent)` } : undefined}>
+        {emojiControl}
         <div className="text-center">
           <div className="text-yellow-400 font-black text-2xl">${gameState.pot.toLocaleString()}</div>
           <div className={`text-xs font-bold mt-0.5 ${

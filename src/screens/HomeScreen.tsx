@@ -80,10 +80,6 @@ export default function HomeScreen({ onPlay }: HomeScreenProps) {
           </p>
           <div className="h-px w-12 bg-gradient-to-l from-transparent to-gray-600" />
         </div>
-        
-        <p className="text-xs text-gray-600 mt-3 tracking-widest uppercase">
-          Multijogador Local • Até 9 Jogadores
-        </p>
       </div>
 
       {/* Botão Play */}
@@ -102,8 +98,8 @@ export default function HomeScreen({ onPlay }: HomeScreenProps) {
      
 
       {/* Footer */}
-      <div className="absolute bottom-4 text-gray-800 text-[10px] tracking-widest">
-        POKER AIR v{version} - Lucas Fujarra
+      <div className="absolute bottom-5 z-10 px-4 text-center text-xs sm:text-sm font-medium tracking-wide text-gray-300">
+        POKER AIR <span className="text-green-400 font-semibold">v{version}</span> - <a href="https://github.com/LucasFujarra" target="_blank" rel="noopener noreferrer" className="text-white underline-offset-4 hover:text-green-400 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-green-400">Lucas Fujarra</a>
       </div>
     </div>
   );

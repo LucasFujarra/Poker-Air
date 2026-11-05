@@ -59,6 +59,9 @@
             },
             "$other": {
               ".validate": false
+            },
+            "emoji": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 32"
             }
           }
         },

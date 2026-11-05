@@ -3,6 +3,7 @@
 // Lógica completa do jogo incluindo apostas, side pots, etc.
 // ================================================================
 
+import type { TableColor } from './tableThemes';
 import type { Card, HandResult } from './handEvaluator';
 import {
   HAND_NAMES,
@@ -18,6 +19,7 @@ export interface Player {
   name: string;
   seat: number; // 0-8
   sessionId?: string;
+  emoji?: string;
   chips: number;
   holeCards: Card[];
   currentBet: number; // Aposta na rodada atual
@@ -57,6 +59,7 @@ export interface GameConfig {
   smallBlind: number;
   bigBlind: number;
   turnTimer: number; // segundos
+  tableColor?: TableColor;
 }
 
 // Jogador pendente (entra na próxima mão)
@@ -66,6 +69,7 @@ export interface PendingPlayer {
   isBot: boolean;
   botDifficulty?: BotDifficulty;
   sessionId?: string;
+  emoji?: string;
 }
 
 // Estado completo do jogo
@@ -101,6 +105,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   smallBlind: 100,
   bigBlind: 200,
   turnTimer: 30,
+  tableColor: 'green',
 };
 
 // Criar estado inicial do jogo
@@ -143,14 +148,15 @@ export function addPlayer(
   seat: number, 
   isBot: boolean = false, 
   botDifficulty?: BotDifficulty,
-  sessionId?: string
+  sessionId?: string,
+  emoji?: string
 ): GameState {
   const existingPlayer = state.players.find(p => p.seat === seat);
   if (existingPlayer) {
     if (!isBot && sessionId && existingPlayer.sessionId === sessionId) {
       return {
         ...state,
-        players: state.players.map(p => p.seat === seat ? { ...p, name, isConnected: true, sessionId } : p),
+        players: state.players.map(p => p.seat === seat ? { ...p, name, isConnected: true, sessionId, emoji: emoji ?? p.emoji } : p),
       };
     }
     return state;
@@ -164,14 +170,14 @@ export function addPlayer(
   if (isHandInProgress(state)) {
     return {
       ...state,
-      pendingJoins: [...state.pendingJoins, { name, seat, isBot, botDifficulty, sessionId }],
+      pendingJoins: [...state.pendingJoins, { name, seat, isBot, botDifficulty, sessionId, emoji }],
     };
   }
 
   // Adicionar direto
   const id = `player_${seat}_${Date.now()}`;
   const newPlayer: Player = {
-    id, name, seat, sessionId,
+    id, name, seat, sessionId, emoji,
     chips: state.config.initialChips,
     holeCards: [], currentBet: 0, totalBetInHand: 0,
     isFolded: false, isAllIn: false, isConnected: true,
@@ -235,7 +241,7 @@ function processPendingQueues(state: GameState): GameState {
     
     const id = `player_${pending.seat}_${Date.now() + pending.seat}`;
     const newPlayer: Player = {
-      id, name: pending.name, seat: pending.seat, sessionId: pending.sessionId,
+      id, name: pending.name, seat: pending.seat, sessionId: pending.sessionId, emoji: pending.emoji,
       chips: newState.config.initialChips,
       holeCards: [], currentBet: 0, totalBetInHand: 0,
       isFolded: false, isAllIn: false, isConnected: true,

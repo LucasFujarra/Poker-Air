@@ -5,8 +5,10 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import { getPlayerEmoji } from '../game/playerEmoji';
 import type { GameState, BotDifficulty, Player } from '../game/gameLogic';
 import CardComponent from '../components/CardComponent';
+import { getTableTheme, getTableBackground } from '../game/tableThemes';
 
 interface TableScreenProps {
   gameState: GameState;
@@ -32,7 +34,6 @@ const SEAT_POSITIONS: { top: string; left: string }[] = [
   { top: '2%',   left: '22%' },   // topo esq
 ];
 
-const SEAT_EMOJIS = ['🎯','🎲','🃏','🎰','🏆','💎','🔥','⭐','🎪'];
 const BOT_NAMES = ['🤖 Carlos','🤖 Maria','🤖 João','🤖 Giovana','🤖 Pedro','🤖 Ozzy','🤖 Lucas','🤖 Bia','🤖 Billy'];
 const DIFF_INFO: Record<BotDifficulty,{emoji:string}> = {easy:{emoji:'😊'},medium:{emoji:'🎯'},hard:{emoji:'🧠'}};
 
@@ -55,19 +56,31 @@ function PlayersModal({isOpen,onClose,gameState,onAddBot,onRemoveBot,botDifficul
   const [qrZoom,setQrZoom]=useState<{open:boolean;seat:number;url:string}>({open:false,seat:0,url:''});
   if(!isOpen) return null;
   const getUrl=(s:number)=>`${baseUrl}#/room/${roomId}/player/${s}`;
-  const addBot=(s:number)=>{const u=gameState.players.map(p=>p.name);onAddBot(BOT_NAMES.find(n=>!u.includes(n))||`🤖 Bot ${s+1}`,s);};
+  const addBot=(s:number)=>{const u=[...gameState.players,...gameState.pendingJoins].map(p=>p.name);onAddBot(BOT_NAMES.find(n=>!u.includes(n))||`🤖 Bot ${s+1}`,s);};
   return (
     <><QRZoomModal isOpen={qrZoom.open} onClose={()=>setQrZoom({...qrZoom,open:false})} url={qrZoom.url} seat={qrZoom.seat} roomId={roomId}/>
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3" onClick={onClose}>
       <div className="bg-gray-900 rounded-3xl p-4 max-w-lg w-full border border-gray-700 max-h-[92vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4"><h3 className="text-white font-bold text-lg">👥 Jogadores ({gameState.players.length}/9)</h3><button onClick={onClose} className="text-gray-500 hover:text-white text-2xl w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-800">✕</button></div>
+        {(gameState.pendingJoins.length > 0 || gameState.pendingRemoves.length > 0) && (
+          <p role="status" className="mb-3 rounded-xl border border-amber-500/30 bg-amber-900/20 px-3 py-2 text-center text-xs text-amber-300">
+            ⏳ Alterações agendadas para a próxima mão: {gameState.pendingJoins.length} entrada(s) e {gameState.pendingRemoves.length} remoção(ões).
+          </p>
+        )}
         <div className="grid grid-cols-3 gap-2 mb-4">
-          {Array.from({length:9},(_,i)=>{const p=gameState.players.find(pl=>pl.seat===i);const url=getUrl(i);return(
+          {Array.from({length:9},(_,i)=>{const p=gameState.players.find(pl=>pl.seat===i);const pending=gameState.pendingJoins.find(pl=>pl.seat===i);const removing=!!p&&gameState.pendingRemoves.includes(p.id);const url=getUrl(i);return(
             <div key={i} className={`rounded-xl p-2.5 flex flex-col items-center justify-center min-h-[140px] relative ${p?p.isBot?'bg-orange-900/20 border border-orange-500/40':'bg-green-900/20 border border-green-500/40':'bg-gray-800/50 border border-gray-700/50'}`}>
-              {p?(<>{p.isBot&&<button onClick={()=>onRemoveBot(p.id)} className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-900/60 hover:bg-red-700 text-red-300 hover:text-white text-[10px] flex items-center justify-center">✕</button>}
-                <span className="text-2xl mb-1">{p.isBot?'🤖':SEAT_EMOJIS[i]}</span><span className="text-white text-xs font-bold truncate max-w-[80px]">{p.name}</span>
+              {p?(<>{p.isBot&&<button onClick={()=>onRemoveBot(p.id)} disabled={removing} aria-label={removing ? "Remoção agendada" : `Remover ${p.name}`} className="disabled:opacity-40 disabled:cursor-not-allowed absolute top-1 right-1 w-5 h-5 rounded-full bg-red-900/60 hover:bg-red-700 text-red-300 hover:text-white text-[10px] flex items-center justify-center">✕</button>}
+                <span className="text-2xl mb-1">{getPlayerEmoji(p)}</span><span className="text-white text-xs font-bold truncate max-w-[80px]">{p.name}</span>
                 <span className={`text-[10px] mt-0.5 ${p.isBot?'text-orange-400':'text-green-400'}`}>{p.isBot?`Bot ${DIFF_INFO[p.botDifficulty||botDifficulty].emoji}`:'Jogador'}</span>
-                <span className="text-yellow-400 text-[10px] font-mono">${p.chips.toLocaleString()}</span></>):(<>
+                <span className="text-yellow-400 text-[10px] font-mono">${p.chips.toLocaleString()}</span>
+                {removing && <span className="mt-2 text-center text-[10px] font-bold text-amber-300">⏳ Sai na próxima mão</span>}
+              </>):pending?(<>
+                <span className="text-2xl mb-1">{getPlayerEmoji(pending)}</span>
+                <span className="text-white text-xs font-bold truncate max-w-[80px]">{pending.name}</span>
+                <span className="text-gray-400 text-[10px] mt-1">Assento {i+1} reservado</span>
+                <span className="mt-2 text-center text-[10px] font-bold text-amber-300">⏳ Entra na próxima mão</span>
+              </>):(<>
                 <div className="text-gray-500 text-[10px] mb-1 font-bold">Assento {i+1}</div>
                 <button onClick={()=>setQrZoom({open:true,seat:i,url})} className="bg-white p-1 rounded-lg shadow-md mb-1.5 hover:scale-105 transition-transform"><QRCodeSVG value={url} size={55} level="M"/></button>
                 <button onClick={()=>addBot(i)} className="px-2 py-1 bg-orange-800/40 hover:bg-orange-700/50 text-orange-300 text-[10px] rounded-lg border border-orange-600/30 font-bold">🤖 Bot</button></>)}
@@ -98,9 +111,11 @@ function ShowdownInfo({gameState,playersWithChips,onNextHand,onBackToLobby}:{gam
 }
 
 // Card do jogador com ALTURA FIXA — nunca muda de tamanho
-function PlayerCard({ player, isTurn, isDealer, isSB, isBB, isWin, isShowdown, timeLeft }: {
-  player: Player; isTurn: boolean; isDealer: boolean; isSB: boolean; isBB: boolean; isWin: boolean; isShowdown: boolean; timeLeft: number;
+function PlayerCard({ player, isTurn, isDealer, isSB, isBB, isWin, isShowdown, timeLeft, pendingRemoval }: {
+  player: Player; isTurn: boolean; isDealer: boolean; isSB: boolean; isBB: boolean; isWin: boolean; isShowdown: boolean; timeLeft: number; pendingRemoval: boolean;
 }) {
+  const winAmount = player.winAmount ?? 0;
+
   // Borda muda de cor mas dimensões NUNCA mudam
   const borderClass = player.isFolded ? 'bg-gray-900/70 border border-gray-800/50 opacity-40'
     : isTurn ? 'bg-yellow-950/90 border-2 border-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.25)]'
@@ -117,21 +132,28 @@ function PlayerCard({ player, isTurn, isDealer, isSB, isBB, isWin, isShowdown, t
         {isBB && <span className="inline-flex h-5 min-w-5 items-center justify-center bg-orange-500 text-white text-[9px] font-bold px-2 rounded-full leading-none">BB</span>}
       </div>
 
-      {/* Card — altura fixa, MAIOR */}
-      <div className={`w-[120px] md:w-[160px] h-[95px] md:h-[125px] rounded-xl text-center backdrop-blur-sm flex flex-col items-center justify-center ${borderClass}`}>
-        <div className="text-white font-bold text-sm md:text-base truncate max-w-[105px] md:max-w-[140px] leading-tight">{player.name}</div>
-        <div className={`text-xs md:text-sm font-mono font-bold leading-tight ${player.chips > 0 ? 'text-yellow-400' : 'text-red-500'}`}>${player.chips.toLocaleString()}</div>
+      {/* Linhas fixas reservam espaço para cartas abertas e resultado. */}
+      <div className={`w-[120px] md:w-[160px] h-[132px] md:h-[144px] rounded-xl text-center backdrop-blur-sm grid grid-rows-[16px_14px_16px_54px_12px] md:grid-rows-[20px_18px_18px_54px_14px] gap-y-px justify-items-center content-center px-1 py-1 ${borderClass}`}>
+        <div className="text-white font-bold text-sm md:text-base truncate max-w-[105px] md:max-w-[140px] leading-none self-center">{!player.isBot && <span className="mr-1">{getPlayerEmoji(player)}</span>}{player.name}</div>
+        <div className={`text-xs md:text-sm font-mono font-bold leading-none self-center ${player.chips > 0 ? 'text-yellow-400' : 'text-red-500'}`}>${player.chips.toLocaleString()}</div>
 
-        {/* Status — sempre ocupa espaço fixo */}
-        <div className="h-4 flex items-center justify-center">
-          {player.isFolded && <span className="text-[9px] md:text-[11px] text-gray-500 font-bold">FOLD</span>}
-          {player.isAllIn && !player.isFolded && <span className="text-[9px] md:text-[11px] text-red-400 font-bold">ALL-IN</span>}
-          {isTurn && !player.isFolded && !player.isAllIn && <span className="text-yellow-400 text-[9px] md:text-[11px] font-bold">⏱ {timeLeft}s</span>}
-          {isWin && player.winAmount && player.winAmount > 0 && <span className="text-green-400 text-[10px] md:text-sm font-bold">+${player.winAmount.toLocaleString()}</span>}
+        {/* Prêmio e status ocupam a mesma linha, sem sobreposição. */}
+        <div className="flex items-center justify-center w-full min-w-0">
+          {isWin && winAmount > 0 ? (
+            <span className="text-green-300 text-[10px] md:text-xs font-bold leading-none truncate" title={`Prêmio: $${winAmount.toLocaleString()}`}>
+              +${winAmount.toLocaleString()}
+            </span>
+          ) : player.isFolded ? (
+            <span className="text-[9px] md:text-[11px] text-gray-500 font-bold leading-none">FOLD</span>
+          ) : !isShowdown && player.isAllIn ? (
+            <span className="text-[9px] md:text-[11px] text-red-400 font-bold leading-none">ALL-IN</span>
+          ) : !isShowdown && isTurn ? (
+            <span className="text-yellow-400 text-[9px] md:text-[11px] font-bold leading-none">⏱ {timeLeft}s</span>
+          ) : null}
         </div>
 
         {/* Cartas — sempre ocupa espaço fixo */}
-        <div className="h-[26px] md:h-[32px] flex items-center justify-center gap-0.5 mt-1">
+        <div className="h-[54px] flex items-center justify-center gap-0.5">
           {!isShowdown && !player.isFolded && player.holeCards.length > 0 && (<>
             <div className="w-[17px] h-[24px] md:w-[20px] md:h-[28px] bg-gradient-to-br from-blue-600 to-blue-800 rounded-sm border border-blue-400/30" />
             <div className="w-[17px] h-[24px] md:w-[20px] md:h-[28px] bg-gradient-to-br from-blue-600 to-blue-800 rounded-sm border border-blue-400/30" />
@@ -139,14 +161,17 @@ function PlayerCard({ player, isTurn, isDealer, isSB, isBB, isWin, isShowdown, t
           {isShowdown && !player.isFolded && player.holeCards.length > 0 && player.holeCards.map((card,i) => <CardComponent key={i} card={card} size="sm" />)}
         </div>
 
-        {/* Hand name */}
-        {isShowdown && player.handResult && !player.isFolded && (
-          <div className="text-[8px] md:text-[9px] text-green-300 font-bold leading-none">{player.handResult.name}</div>
-        )}
+        {/* A combinação fica abaixo das cartas, em uma linha própria. */}
+        <div className="w-full min-w-0 text-[8px] md:text-[9px] text-green-300 font-bold leading-none self-center truncate" title={isShowdown && !player.isFolded ? player.handResult?.name : undefined}>
+          {isShowdown && !player.isFolded ? player.handResult?.name : ''}
+        </div>
       </div>
 
-      {/* Aposta — espaço fixo */}
-      <div className="h-6 flex items-center mt-1">
+      {/* Aposta e indicação de remoção agendada */}
+      <div className="min-h-6 flex flex-col items-center gap-1 mt-1">
+        {pendingRemoval && (
+          <span className="rounded-full border border-amber-500/40 bg-gray-950/90 px-2 py-1 text-[9px] md:text-[10px] font-bold text-amber-300">⏳ Sai na próxima mão</span>
+        )}
         {player.currentBet > 0 && !player.isFolded && (
           <div className="bg-black/60 px-2 py-0.5 rounded-full border border-yellow-500/30">
             <span className="text-yellow-300 text-[10px] md:text-xs font-mono font-bold">${player.currentBet.toLocaleString()}</span>
@@ -173,6 +198,7 @@ export default function TableScreen({ gameState, onNextHand, onBackToLobby, onAd
   const currentPlayer = gameState.currentPlayerIndex >= 0 ? gameState.players[gameState.currentPlayerIndex] : null;
   const playersWithChips = useMemo(() => gameState.players.filter(p => p.chips > 0), [gameState.players]);
   const isShowdown = gameState.phase === 'showdown';
+  const tableTheme = getTableTheme(gameState.config.tableColor);
 
   return (
     <div className="h-[100dvh] bg-[#0a0e17] flex flex-col overflow-hidden">
@@ -197,9 +223,9 @@ export default function TableScreen({ gameState, onNextHand, onBackToLobby, onAd
       <div className="flex-1 flex items-center justify-center p-1 min-h-0">
         <div className="relative w-full h-full max-w-[1200px]">
 
-          {/* Oval verde — MAIOR */}
-          <div className="absolute inset-[5%] rounded-[50%] bg-gradient-to-br from-[#1a5c2e] via-[#165a28] to-[#0f4a20] border-[10px] border-[#6b3a1f] shadow-[0_0_80px_rgba(0,0,0,0.6),inset_0_0_50px_rgba(0,0,0,0.4)]">
-            <div className="absolute inset-4 rounded-[50%] border-2 border-[#2a7a3e]/30" />
+          {/* Mesa com a cor configurada na sala */}
+          <div className="absolute inset-[5%] rounded-[50%] border-[10px] border-[#6b3a1f] shadow-[0_0_80px_rgba(0,0,0,0.6),inset_0_0_50px_rgba(0,0,0,0.4)]" style={{ background: getTableBackground(tableTheme) }}>
+            <div className="absolute inset-4 rounded-[50%] border-2" style={{ borderColor: `${tableTheme.accent}4d` }} />
 
             {/* Centro da mesa */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center w-[85%]">
@@ -207,7 +233,7 @@ export default function TableScreen({ gameState, onNextHand, onBackToLobby, onAd
               <div className="flex gap-3 justify-center mb-3">
                 {gameState.communityCards.map((card, i) => <CardComponent key={`c-${i}`} card={card} size="lg" animate delay={i*150} />)}
                 {Array.from({length:5-gameState.communityCards.length},(_,i)=>(
-                  <div key={`e-${i}`} className="w-[80px] h-[110px] rounded-xl border-2 border-[#2a7a3e]/30 bg-[#1a5c2e]/30" />
+                  <div key={`e-${i}`} className="w-[80px] h-[110px] rounded-xl border-2" style={{ borderColor: `${tableTheme.accent}4d`, backgroundColor: `${tableTheme.felt[0]}4d` }} />
                 ))}
               </div>
 
@@ -242,7 +268,7 @@ export default function TableScreen({ gameState, onNextHand, onBackToLobby, onAd
 
             return (
               <div key={seatIdx} className="absolute z-10" style={{ top: pos.top, left: pos.left, transform: 'translateX(-50%)' }}>
-                <PlayerCard player={player} isTurn={isTurn} isDealer={isDealer} isSB={isSB} isBB={isBB} isWin={isWin} isShowdown={isShowdown} timeLeft={timeLeft} />
+                <PlayerCard player={player} isTurn={isTurn} isDealer={isDealer} isSB={isSB} isBB={isBB} isWin={isWin} isShowdown={isShowdown} timeLeft={timeLeft} pendingRemoval={gameState.pendingRemoves.includes(player.id)} />
               </div>
             );
           })}

@@ -56,3 +56,30 @@ test('jogadas fora da vez e tentativas de comandar bots não alteram a partida',
   const bot = state.players.find(p => p.isBot);
   assert.equal(game.applyRoomRequest(state, 'alice', { type: 'leave', playerId: bot.id }), state);
 });
+
+test('emoji escolhido acompanha o jogador e quem aguarda a próxima mão', () => {
+  let state = game.createGameState();
+  state = game.applyRoomRequest(state, 'alice', { type: 'join', name: 'Alice', seat: 0, emoji: '🦊' });
+  state = game.applyRoomRequest(state, 'bob', { type: 'join', name: 'Bob', seat: 1, emoji: '😎' });
+  assert.equal(state.players[0].emoji, '🦊');
+  state = game.startNewHand(state);
+  state = game.applyRoomRequest(state, 'carol', { type: 'join', name: 'Carol', seat: 2, emoji: '👩🏽‍🚀' });
+  assert.equal(state.pendingJoins[0].emoji, '👩🏽‍🚀');
+  state = game.startNewHand({ ...state, phase: 'handComplete' });
+  assert.equal(state.players.find(p => p.sessionId === 'carol').emoji, '👩🏽‍🚀');
+});
+
+test('troca de emoji altera apenas o avatar do próprio jogador', () => {
+  const state = game.startNewHand(joinedState());
+  const next = game.applyRoomRequest(state, 'alice', { type: 'join', name: 'Tentativa de renomear', seat: 0, emoji: '🦊' });
+  assert.equal(next.players[0].emoji, '🦊');
+  assert.deepEqual({ ...next, players: next.players.map((p, index) => ({ ...p, emoji: state.players[index].emoji })) }, state);
+  assert.equal(game.applyRoomRequest(state, 'bob', { type: 'join', name: 'Bob', seat: 0, emoji: '🦊' }), state);
+});
+
+test('pedido de emoji inválido não altera o estado', () => {
+  const state = joinedState();
+  for (const emoji of ['', ' ', 'a'.repeat(33), 123]) {
+    assert.equal(game.applyRoomRequest(state, 'alice', { type: 'join', name: 'Alice', seat: 0, emoji }), state);
+  }
+});

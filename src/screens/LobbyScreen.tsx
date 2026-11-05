@@ -4,6 +4,9 @@
 
 import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import { getPlayerEmoji } from '../game/playerEmoji';
+import { TABLE_THEMES, getTableBackground } from '../game/tableThemes';
+import type { TableColor } from '../game/tableThemes';
 import type { GameState, BotDifficulty, GameConfig } from '../game/gameLogic';
 
 interface LobbyScreenProps {
@@ -21,7 +24,6 @@ interface LobbyScreenProps {
 }
 
 const BOT_NAMES = ['🤖 Carlos', '🤖 Maria', '🤖 João', '🤖 Giovana', '🤖 Pedro', '🤖 Ozzy', '🤖 Lucas', '🤖 Bia', '🤖 Billy'];
-const SEAT_EMOJIS = ['🎯', '🎲', '🃏', '🎰', '🏆', '💎', '🔥', '⭐', '🎪'];
 
 const DIFFICULTY_INFO: Record<BotDifficulty, { label: string; emoji: string; color: string; desc: string }> = {
   easy: { label: 'Fácil', emoji: '😊', color: 'text-green-400', desc: 'Joga passivo, comete erros' },
@@ -82,16 +84,16 @@ export default function LobbyScreen({
 
   useEffect(() => {
     if (!qrModal.isOpen) return;
-    const occupied = gameState.players.some((player) => player.seat === qrModal.seat);
+    const occupied = [...gameState.players, ...gameState.pendingJoins].some((player) => player.seat === qrModal.seat);
     if (occupied) {
       setQrModal((current) => ({ ...current, isOpen: false }));
     }
-  }, [gameState.players, qrModal.isOpen, qrModal.seat]);
+  }, [gameState.players, gameState.pendingJoins, qrModal.isOpen, qrModal.seat]);
 
   const getPlayerUrl = (seat: number) => `${baseUrl}#/room/${roomId}/player/${seat}`;
 
   const handleAddBot = (seat: number) => {
-    const usedNames = gameState.players.map(p => p.name);
+    const usedNames = [...gameState.players, ...gameState.pendingJoins].map(p => p.name);
     const availableName = BOT_NAMES.find(n => !usedNames.includes(n)) || `🤖 Bot ${seat + 1}`;
     onAddBot(availableName, seat);
   };
@@ -102,7 +104,7 @@ export default function LobbyScreen({
     setTimeout(() => setCopiedRoom(false), 2000);
   };
 
-  const handleConfigChange = (field: keyof GameConfig, value: string) => {
+  const handleConfigChange = (field: Exclude<keyof GameConfig, 'tableColor'>, value: string) => {
     const parsed = Number(value.replace(/\D/g, ''));
     const safeValue = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
     const nextConfig = { ...draftConfig, [field]: safeValue };
@@ -206,6 +208,35 @@ export default function LobbyScreen({
               );
             })}
           </div>
+          <fieldset className="mt-4">
+            <legend className="text-gray-400 text-xs mb-2">🎨 Cor da mesa</legend>
+            <div className="grid grid-cols-3 gap-2">
+              {(Object.keys(TABLE_THEMES) as TableColor[]).map((color) => {
+                const theme = TABLE_THEMES[color];
+                const isActive = (draftConfig.tableColor ?? 'green') === color;
+                return (
+                  <button
+                    key={color}
+                    type="button"
+                    aria-pressed={isActive}
+                    onClick={() => {
+                      const nextConfig = { ...draftConfig, tableColor: color };
+                      setDraftConfig(nextConfig);
+                      onUpdateConfig(nextConfig);
+                    }}
+                    className={`p-2 rounded-xl border-2 transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${isActive ? 'border-white bg-gray-700 text-white' : 'border-gray-700 bg-gray-800/50 text-gray-400 hover:border-gray-500'}`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="block h-9 rounded-[50%] border-[3px] border-[#6b3a1f] mb-2"
+                      style={{ background: getTableBackground(theme) }}
+                    />
+                    <span className="text-xs font-bold">{theme.label}{isActive ? ' ✓' : ''}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
           <p className="text-gray-500 text-[10px] mt-3 text-center">
             Padrão atual: {draftConfig.initialChips.toLocaleString()} fichas • blinds {draftConfig.smallBlind}/{draftConfig.bigBlind}
           </p>
@@ -218,11 +249,19 @@ export default function LobbyScreen({
         <p className="text-blue-300 text-xs">📱 Clique no <strong>QR code</strong> para ampliar, ou adicione um <strong>🤖 Bot</strong></p>
       </div>
 
+      {(gameState.pendingJoins.length > 0 || gameState.pendingRemoves.length > 0) && (
+        <p role="status" className="mb-4 rounded-xl border border-amber-500/30 bg-amber-900/20 px-3 py-2 text-center text-xs text-amber-300">
+          ⏳ Entradas e remoções marcadas serão aplicadas na próxima mão.
+        </p>
+      )}
+
       {/* Grid de assentos */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4 max-w-3xl w-full mb-6">
         {Array.from({ length: 9 }, (_, i) => {
           const player = gameState.players.find(p => p.seat === i);
           const seatUrl = getPlayerUrl(i);
+          const pending = gameState.pendingJoins.find(p => p.seat === i);
+          const removing = !!player && gameState.pendingRemoves.includes(player.id);
 
           return (
             <div key={i} className={`rounded-2xl p-3 md:p-4 flex flex-col items-center justify-center min-h-[180px] md:min-h-[220px] transition-all duration-300 relative ${
@@ -232,16 +271,23 @@ export default function LobbyScreen({
               {player ? (
                 <div className="text-center">
                   {player.isBot && (
-                    <button onClick={() => onRemovePlayer(player.id)} className="absolute top-2 right-2 w-7 h-7 rounded-full bg-red-900/50 hover:bg-red-700 text-red-300 hover:text-white text-sm flex items-center justify-center transition-colors border border-red-700/50">✕</button>
+                    <button onClick={() => onRemovePlayer(player.id)} disabled={removing} aria-label={removing ? "Remoção agendada" : `Remover ${player.name}`} className="disabled:opacity-40 disabled:cursor-not-allowed absolute top-2 right-2 w-7 h-7 rounded-full bg-red-900/50 hover:bg-red-700 text-red-300 hover:text-white text-sm flex items-center justify-center transition-colors border border-red-700/50">✕</button>
                   )}
-                  <div className="text-4xl md:text-5xl mb-2">{player.isBot ? '🤖' : SEAT_EMOJIS[i]}</div>
+                  <div className="text-4xl md:text-5xl mb-2">{getPlayerEmoji(player)}</div>
                   <div className="text-white font-bold text-lg">{player.name}</div>
                   <div className={`text-sm mt-1 ${player.isBot ? 'text-orange-400' : 'text-green-400'}`}>Assento {i + 1}</div>
                   {player.isBot && <div className="text-orange-400/60 text-xs mt-1">{DIFFICULTY_INFO[player.botDifficulty || botDifficulty].emoji} {DIFFICULTY_INFO[player.botDifficulty || botDifficulty].label}</div>}
                   <div className={`flex items-center justify-center gap-1 text-xs mt-2 ${player.isBot ? 'text-orange-500' : 'text-green-500'}`}>
                     <span className={`w-2 h-2 rounded-full animate-pulse ${player.isBot ? 'bg-orange-500' : 'bg-green-500'}`}></span>
-                    {player.isBot ? 'Bot' : 'Conectado'}
+                    {removing ? '⏳ Sai na próxima mão' : player.isBot ? 'Bot' : 'Conectado'}
                   </div>
+                </div>
+              ) : pending ? (
+                <div className="text-center">
+                  <div className="text-4xl md:text-5xl mb-2">{getPlayerEmoji(pending)}</div>
+                  <div className="text-white font-bold text-lg">{pending.name}</div>
+                  <div className="text-gray-400 text-sm mt-1">Assento {i + 1} reservado</div>
+                  <div className="text-amber-300 text-xs font-bold mt-2">⏳ Entra na próxima mão</div>
                 </div>
               ) : (
                 <div className="text-center">
