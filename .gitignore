@@ -1,2 +1,11 @@
 node_modules
 dist/
+
+# Configuração local de ambiente
+.env
+.env.*
+!.env.example
+
+# Arquivos locais dos emuladores Firebase
+.firebase/
+*-debug.log

@@ -1,3 +1,5 @@
+import { getFirebaseUserId } from '../firebase/config';
+
 // ================================================================
 // POKER AIR — Histórico de Salas do Usuário
 // Salva no localStorage as salas criadas/acessadas
@@ -56,19 +58,8 @@ export function getSavedPlayerRoom(code: string): MyRoom | undefined {
   return getMyRooms().find((room) => room.code === code && room.role === 'player');
 }
 
-export function ensurePlayerSessionId(code: string): string {
-  const existing = getSavedPlayerRoom(code);
-  if (existing?.sessionId) return existing.sessionId;
-
-  const sessionId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `session_${code}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-
-  if (existing) {
-    saveMyRoom({ ...existing, sessionId });
-  }
-
-  return sessionId;
+export function ensurePlayerSessionId(_code: string): string {
+  return getFirebaseUserId();
 }
 
 // Remover sala do histórico

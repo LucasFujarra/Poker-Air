@@ -12,7 +12,7 @@ import JoinRoomScreen from './screens/JoinRoomScreen';
 import { OnlineGameStore } from './game/onlineGameStore';
 import type { GameState, GameConfig, BotDifficulty, PlayerAction } from './game/gameLogic';
 import { DEFAULT_CONFIG, createGameState } from './game/gameLogic';
-import { initFirebase } from './firebase/config';
+import { ensureFirebaseUser } from './firebase/config';
 import { ensurePlayerSessionId, saveMyRoom } from './game/roomHistory';
 
 type Screen = 'home' | 'mode' | 'lobby' | 'table' | 'player' | 'joinRoom';
@@ -23,9 +23,9 @@ interface IGameStore {
   hostAddPlayer: (name: string, seat: number, isBot?: boolean) => void;
   hostRemovePlayer: (playerId: string) => void;
   hostStartHand: () => void;
-  playerJoin: (name: string, seat: number, sessionId?: string) => void;
-  playerAction: (playerId: string, action: PlayerAction) => void;
-  playerLeave: (playerId: string) => void;
+  playerJoin: (name: string, seat: number, sessionId?: string) => Promise<void>;
+  playerAction: (playerId: string, action: PlayerAction) => Promise<void>;
+  playerLeave: (playerId: string) => Promise<void>;
   destroy: () => void;
   setBotDifficulty?: (difficulty: BotDifficulty) => void;
   updateConfig?: (config: GameConfig) => void;
@@ -47,7 +47,7 @@ function parseHash(): { roomId: string; seat?: number } | null {
   return null;
 }
 
-function App() {
+function GameApp() {
   const hashInfo = useRef(parseHash());
   const isPlayerFromUrl = !!hashInfo.current;
 
@@ -60,9 +60,6 @@ function App() {
   const [playerSessionId, setPlayerSessionId] = useState<string>('');
   const gameStoreRef = useRef<IGameStore | null>(null);
   const didInit = useRef(false);
-
-  // Inicializar Firebase
-  useEffect(() => { initFirebase(); }, []);
 
   // Jogador entrando via QR code / URL
   useEffect(() => {
@@ -79,7 +76,11 @@ function App() {
     setScreen('joinRoom');
   }, [config]);
 
-  useEffect(() => () => { gameStoreRef.current?.destroy(); }, []);
+  useEffect(() => () => {
+    gameStoreRef.current?.destroy();
+    gameStoreRef.current = null;
+    didInit.current = false;
+  }, []);
 
   // ============ NAVEGAÇÃO ============
 
@@ -258,4 +259,18 @@ function App() {
   }
 }
 
-export default App;
+export default function App() {
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    ensureFirebaseUser().then(() => { if (active) setReady(true); })
+      .catch((cause) => {
+        console.error('Erro de autenticação:', cause);
+        if (active) setError('Não foi possível conectar. Verifique a configuração e a autenticação anônima no Firebase.');
+      });
+    return () => { active = false; };
+  }, []);
+  if (!ready) return <div className="min-h-screen bg-[#0a0e17] text-white flex items-center justify-center p-6">{error || 'Conectando com segurança...'}</div>;
+  return <GameApp />;
+}

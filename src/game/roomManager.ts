@@ -4,168 +4,91 @@
 // Mostra apenas jogadores humanos nas listagens
 // ================================================================
 
-import { ref, get, remove, onValue, off } from 'firebase/database';
-import { getFirebaseDatabase } from '../firebase/config';
+import { ref, get, remove, onValue, update } from 'firebase/database';
+import { getFirebaseDatabase, ensureFirebaseUser } from '../firebase/config';
 
 const MAX_ROOMS = 10;
-const INACTIVE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutos
+const INACTIVE_TIMEOUT_MS = 10 * 60 * 1000;
 
 export interface RoomInfo {
   id: string;
   code: string;
   createdAt: number;
   updatedAt: number;
-  playerCount: number; // Apenas jogadores humanos
+  playerCount: number;
   phase: string;
   isActive: boolean;
 }
 
 function generateCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
-  return code;
+  return Array.from(crypto.getRandomValues(new Uint8Array(6)), value => chars[value % chars.length]).join('');
 }
 
-function getHumanCountFromRoomState(rawState: string): { playerCount: number; phase: string } {
-  let playerCount = 0;
-  let phase = 'waiting';
-  try {
-    const state = JSON.parse(rawState);
-    playerCount = state.players?.filter((p: { isBot?: boolean }) => !p.isBot).length || 0;
-    phase = state.phase || 'waiting';
-  } catch {
-    // ignore
-  }
-  return { playerCount, phase };
+function parseRooms(data: Record<string, Omit<RoomInfo, 'id' | 'isActive'>> | null): RoomInfo[] {
+  return Object.entries(data ?? {}).map(([code, room]) => ({
+    ...room, id: code, code, createdAt: room.createdAt || room.updatedAt,
+    isActive: Date.now() - room.updatedAt < INACTIVE_TIMEOUT_MS,
+  })).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function listRooms(): Promise<RoomInfo[]> {
+  const uid = await ensureFirebaseUser();
   const db = getFirebaseDatabase();
   if (!db) return [];
-
-  try {
-    const snapshot = await get(ref(db, 'rooms'));
-    if (!snapshot.exists()) return [];
-
-    const data = snapshot.val();
-    const now = Date.now();
-    const rooms: RoomInfo[] = [];
-
-    for (const [code, roomData] of Object.entries(data)) {
-      const room = roomData as { state?: string; ts?: number; updatedAt?: number; createdAt?: number };
-      if (!room?.state) continue;
-
-      const updatedAt = room.ts || room.updatedAt || 0;
-      const { playerCount, phase } = getHumanCountFromRoomState(room.state);
-
-      rooms.push({
-        id: code,
-        code,
-        createdAt: room.createdAt || updatedAt,
-        updatedAt,
-        playerCount,
-        phase,
-        isActive: (now - updatedAt) < INACTIVE_TIMEOUT_MS,
-      });
-    }
-
-    return rooms.sort((a, b) => b.updatedAt - a.updatedAt);
-  } catch (error) {
-    console.error('❌ Erro ao listar salas:', error);
-    return [];
-  }
+  return parseRooms((await get(ref(db, `roomDirectory/${uid}`))).val());
 }
 
 export function subscribeToRooms(callback: (rooms: RoomInfo[]) => void): () => void {
-  const db = getFirebaseDatabase();
-  if (!db) return () => {};
-
-  const roomsRef = ref(db, 'rooms');
-  const handler = onValue(roomsRef, (snapshot) => {
-    if (!snapshot.exists()) {
-      callback([]);
-      return;
-    }
-
-    const data = snapshot.val();
-    const now = Date.now();
-    const rooms: RoomInfo[] = [];
-
-    for (const [code, roomData] of Object.entries(data)) {
-      const room = roomData as { state?: string; ts?: number; updatedAt?: number; createdAt?: number };
-      if (!room?.state) continue;
-
-      const updatedAt = room.ts || room.updatedAt || 0;
-      const { playerCount, phase } = getHumanCountFromRoomState(room.state);
-
-      rooms.push({
-        id: code,
-        code,
-        createdAt: room.createdAt || updatedAt,
-        updatedAt,
-        playerCount,
-        phase,
-        isActive: (now - updatedAt) < INACTIVE_TIMEOUT_MS,
-      });
-    }
-
-    callback(rooms.sort((a, b) => b.updatedAt - a.updatedAt));
-  });
-
-  return () => off(roomsRef, 'value', handler);
+  let cancelled = false;
+  let unsubscribe: (() => void) | undefined;
+  void ensureFirebaseUser().then(uid => {
+    const db = getFirebaseDatabase();
+    if (!db || cancelled) return;
+    unsubscribe = onValue(ref(db, `roomDirectory/${uid}`), snapshot => callback(parseRooms(snapshot.val())),
+      error => console.error('Erro ao listar suas salas:', error));
+  }).catch(error => console.error('Erro de autenticação:', error));
+  return () => { cancelled = true; unsubscribe?.(); };
 }
 
 export async function createRoom(): Promise<{ ok: true; code: string } | { ok: false; reason: string }> {
-  const rooms = await listRooms();
-  const inactiveRooms = rooms.filter(r => !r.isActive);
-
-  if (rooms.length >= MAX_ROOMS && inactiveRooms.length === 0) {
-    return { ok: false, reason: 'Todas as 10 salas estão em uso. Tente novamente em alguns minutos.' };
-  }
-
-  if (rooms.length >= MAX_ROOMS && inactiveRooms.length > 0) {
-    const oldest = inactiveRooms[inactiveRooms.length - 1];
-    const db = getFirebaseDatabase();
-    if (db) {
-      try {
-        await remove(ref(db, `rooms/${oldest.code}`));
-      } catch {
-        // ignore
-      }
+  try {
+    const rooms = await listRooms();
+    if (rooms.length >= MAX_ROOMS) {
+      const oldest = [...rooms].reverse().find(room => !room.isActive);
+      if (!oldest) return { ok: false, reason: 'Suas 10 salas estão em uso.' };
+      await deleteRoom(oldest.code);
     }
+    const db = getFirebaseDatabase();
+    if (!db) throw new Error('Firebase indisponível');
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const code = generateCode();
+      if (!(await get(ref(db, `rooms/${code}/ts`))).exists()) return { ok: true, code };
+    }
+    return { ok: false, reason: 'Não foi possível gerar um código. Tente novamente.' };
+  } catch (error) {
+    console.error('Erro ao criar sala:', error);
+    return { ok: false, reason: 'Não foi possível criar a sala. Verifique a conexão e as permissões.' };
   }
-
-  const existingCodes = new Set(rooms.map(r => r.code));
-  let code = generateCode();
-  let tries = 0;
-  while (existingCodes.has(code) && tries < 20) {
-    code = generateCode();
-    tries++;
-  }
-
-  return { ok: true, code };
 }
 
 export async function deleteRoom(code: string) {
+  const uid = await ensureFirebaseUser();
   const db = getFirebaseDatabase();
   if (!db) return;
-  try {
-    await remove(ref(db, `rooms/${code}`));
-  } catch {
-    // ignore
-  }
+  // A regra só permite apagar salas do próprio anfitrião.
+  await remove(ref(db, `rooms/${code}`));
+  await update(ref(db, `roomDirectory/${uid}`), { [code]: null });
 }
 
 export async function roomExists(code: string): Promise<boolean> {
-  const db = getFirebaseDatabase();
-  if (!db) return false;
+  if (!/^[A-Z2-9]{6}$/.test(code)) return false;
   try {
-    const snapshot = await get(ref(db, `rooms/${code}`));
-    if (!snapshot.exists()) return false;
-    const data = snapshot.val();
-    const updatedAt = data.ts || 0;
-    return (Date.now() - updatedAt) < INACTIVE_TIMEOUT_MS;
+    await ensureFirebaseUser();
+    const db = getFirebaseDatabase();
+    if (!db) return false;
+    const snapshot = await get(ref(db, `rooms/${code}/ts`));
+    return snapshot.exists() && Date.now() - snapshot.val() < INACTIVE_TIMEOUT_MS;
   } catch {
     return false;
   }

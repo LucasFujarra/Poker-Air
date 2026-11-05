@@ -1,11 +1,11 @@
 // ================================================================
 // POKER AIR — Game Store Online (Firebase)
-// Tanto host quanto jogador leem/escrevem no Firebase
+// Anfitrião publica o estado; jogadores enviam pedidos autenticados
 // O Firebase é a FONTE DA VERDADE — todos sincronizam dele
 // ================================================================
 
-import { ref, set, onValue, off, get } from 'firebase/database';
-import { getFirebaseDatabase } from '../firebase/config';
+import { ref, child, set, onValue, off, get, update, push, remove, runTransaction, onChildAdded } from 'firebase/database';
+import { getFirebaseDatabase, ensureFirebaseUser } from '../firebase/config';
 import type { GameState, GameConfig, PlayerAction, BotDifficulty } from './gameLogic';
 import {
   DEFAULT_CONFIG,
@@ -13,6 +13,7 @@ import {
   getCurrentTurnInfo, checkTimeout,
 } from './gameLogic';
 import { decideBotAction } from './botLogic';
+import { applyRoomRequest } from './roomRequests';
 
 export class OnlineGameStore {
   private state: GameState;
@@ -23,31 +24,94 @@ export class OnlineGameStore {
   private botInterval: ReturnType<typeof setInterval> | null = null;
   private unsubscribeFirebase: (() => void) | null = null;
   private botDifficulty: BotDifficulty = 'medium';
-  private writing = false; // Evitar loops de escrita
+  private ready: Promise<void>;
+  private uid = '';
+  private destroyed = false;
+  private unsubscribeRequests: (() => void) | null = null;
+  private requestQueue: Promise<void> = Promise.resolve();
 
   constructor(roomId: string, isHost: boolean, config: GameConfig = DEFAULT_CONFIG) {
     this.roomId = roomId;
     this.isHost = isHost;
     this.state = createGameState(config);
 
-    if (isHost) {
-      // Escrever estado inicial no Firebase
-      this.writeToFirebase(this.state);
-
-      // Timer: timeout de jogadas + auto next hand + bots
-      this.timerInterval = setInterval(() => {
-        this.handleTimeout();
-        this.handleAutoNextHand();
-      }, 1000);
-
-      // Processar bots
-      this.botInterval = setInterval(() => {
-        this.handleBotTurn();
-      }, 1800);
-    }
-
     // TODOS ouvem o Firebase — é a fonte da verdade
+    this.ready = this.connect().catch((error) => {
+      console.error('❌ Não foi possível acessar a sala:', error);
+      this.destroy();
+      window.alert('Não foi possível acessar esta sala. Confira o código, as permissões e a conexão.');
+      throw error;
+    });
+    void this.ready.catch(() => {});
+  }
+
+  private async connect() {
+    this.uid = await ensureFirebaseUser();
+    const dbRef = this.getDbRef();
+    if (!dbRef || this.destroyed) return;
+    if (this.isHost) {
+      const snapshot = await get(dbRef);
+      if (!snapshot.exists()) {
+        await update(dbRef, { hostUid: this.uid, createdAt: Date.now(), state: JSON.stringify(this.state), ts: Date.now() });
+      } else {
+        if (snapshot.val().hostUid !== this.uid) throw new Error('Esta sala pertence a outro anfitrião.');
+        this.state = JSON.parse(snapshot.val().state);
+      }
+      await this.writeToFirebase(this.state);
+    } else {
+      await set(child(dbRef, `members/${this.uid}`), true);
+    }
+    if (this.destroyed) return;
     this.listenToFirebase();
+    if (this.isHost) {
+      this.listenToRequests();
+      this.timerInterval = setInterval(() => {
+        void this.handleTimeout().catch(console.error);
+        void this.handleAutoNextHand().catch(console.error);
+      }, 1000);
+      this.botInterval = setInterval(() => { void this.handleBotTurn().catch(console.error); }, 1800);
+    }
+  }
+
+  private listenToRequests() {
+    const dbRef = this.getDbRef();
+    if (!dbRef) return;
+    this.unsubscribeRequests = onChildAdded(child(dbRef, 'requests'), (snapshot) => {
+      this.requestQueue = this.requestQueue.then(async () => {
+        if (this.destroyed) return;
+        const request = snapshot.val();
+        const uid = snapshot.key!;
+        const current = this.state;
+        const next = applyRoomRequest(current, uid, request);
+        if (next !== current) {
+          await this.writeToFirebase(next);
+          this.state = next;
+          this.notifyListeners();
+        }
+        await runTransaction(snapshot.ref, current => current?.id === request.id ? null : undefined);
+      }).catch(error => console.error('Erro ao processar pedido:', error));
+    });
+  }
+
+  private async sendRequest(request: Record<string, unknown>) {
+    await this.ready;
+    const dbRef = this.getDbRef();
+    if (!dbRef || this.destroyed) return;
+    // Um pedido por dispositivo; o anfitrião o remove após processar.
+    const requestRef = child(dbRef, `requests/${this.uid}`);
+    await set(requestRef, { ...request, id: push(requestRef).key });
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        unsubscribe();
+        void remove(requestRef).catch(console.error);
+        reject(new Error('O anfitrião não respondeu. Confira se a mesa está aberta.'));
+      }, 15000);
+      const unsubscribe = onValue(requestRef, snapshot => {
+        if (snapshot.exists()) return;
+        clearTimeout(timer);
+        queueMicrotask(() => { unsubscribe(); resolve(); });
+      }, error => { clearTimeout(timer); queueMicrotask(() => { unsubscribe(); reject(error); }); });
+    });
   }
 
   // =============================================
@@ -62,32 +126,33 @@ export class OnlineGameStore {
 
   private async writeToFirebase(state: GameState) {
     const dbRef = this.getDbRef();
-    if (!dbRef) return;
+    if (!dbRef || !this.isHost || this.destroyed) return;
 
-    this.writing = true;
     try {
-      await set(dbRef, {
+      await update(dbRef, {
         state: JSON.stringify(state),
         ts: Date.now(),
       });
+      await set(child(dbRef.root, `roomDirectory/${this.uid}/${this.roomId}`), {
+        code: this.roomId, updatedAt: Date.now(),
+        playerCount: state.players.filter(p => !p.isBot).length, phase: state.phase,
+      });
     } catch (error) {
       console.error('❌ Firebase write error:', error);
+      throw error;
     }
-    // Pequeno delay antes de permitir leitura de volta
-    setTimeout(() => { this.writing = false; }, 200);
   }
 
   private listenToFirebase() {
     const dbRef = this.getDbRef();
     if (!dbRef) return;
 
-    const callback = onValue(dbRef, (snapshot) => {
-      if (this.writing) return; // Ignorar eco da própria escrita
-      
+    const stateRef = child(dbRef, 'state');
+    const callback = onValue(stateRef, (snapshot) => {
       const data = snapshot.val();
-      if (data && data.state) {
+      if (data) {
         try {
-          const newState = JSON.parse(data.state) as GameState;
+          const newState = JSON.parse(data) as GameState;
           this.state = newState;
           this.notifyListeners();
         } catch (e) {
@@ -96,84 +161,42 @@ export class OnlineGameStore {
       }
     });
 
-    this.unsubscribeFirebase = () => off(dbRef, 'value', callback);
+    this.unsubscribeFirebase = () => off(stateRef, 'value', callback);
   }
 
-  // Ler estado atual do Firebase (uma vez)
-  private async readFromFirebase(): Promise<GameState | null> {
-    const dbRef = this.getDbRef();
-    if (!dbRef) return null;
-
-    try {
-      const snapshot = await get(dbRef);
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        return JSON.parse(data.state) as GameState;
-      }
-    } catch (e) {
-      console.error('❌ Firebase read error:', e);
-    }
-    return null;
+  private async mutate(transform: (state: GameState) => GameState) {
+    if (!this.isHost) return;
+    await this.ready;
+    const operation = this.requestQueue.then(async () => {
+      if (this.destroyed) return;
+      const next = transform(this.state);
+      if (next === this.state) return;
+      await this.writeToFirebase(next);
+      this.state = next;
+      this.notifyListeners();
+    });
+    this.requestQueue = operation.catch(error => console.error('Erro ao atualizar partida:', error));
+    await operation;
   }
-
-  // =============================================
-  // HOST: Timeout e Bots
-  // =============================================
 
   private async handleTimeout() {
-    if (!this.isHost) return;
-    const phase = this.state.phase;
-    if (phase === 'waiting' || phase === 'showdown' || phase === 'handComplete') return;
-    if (this.state.currentPlayerIndex < 0) return;
-
-    const newState = checkTimeout(this.state);
-    if (newState !== this.state) {
-      this.state = newState;
-      this.notifyListeners();
-      await this.writeToFirebase(newState);
-    }
+    await this.mutate(checkTimeout);
   }
 
   private async handleAutoNextHand() {
-    if (!this.isHost) return;
-    if (this.state.phase !== 'showdown') return;
-    if (this.state.showdownEndTime <= 0) return;
-    
-    if (Date.now() >= this.state.showdownEndTime) {
-      // Verificar se há jogadores suficientes para continuar
-      const withChips = this.state.players.filter(p => p.chips > 0);
-      if (withChips.length >= 2) {
-        const newState = startNewHand(this.state);
-        this.state = newState;
-        this.notifyListeners();
-        await this.writeToFirebase(newState);
-      }
-    }
+    await this.mutate(state => state.phase === 'showdown' && state.showdownEndTime > 0 &&
+      Date.now() >= state.showdownEndTime && state.players.filter(p => p.chips > 0).length >= 2
+      ? startNewHand(state) : state);
   }
 
   private async handleBotTurn() {
-    if (!this.isHost) return;
-    const phase = this.state.phase;
-    if (phase === 'waiting' || phase === 'showdown' || phase === 'handComplete') return;
-
-    const idx = this.state.currentPlayerIndex;
-    if (idx < 0 || idx >= this.state.players.length) return;
-
-    const currentPlayer = this.state.players[idx];
-    if (!currentPlayer || !currentPlayer.isBot || currentPlayer.isFolded || currentPlayer.isAllIn) return;
-
-    const action = decideBotAction(
-      this.state,
-      currentPlayer.id,
-      currentPlayer.botDifficulty || this.botDifficulty
-    );
-
-    if (action) {
-      const newState = processAction(this.state, currentPlayer.id, action);
-      this.state = newState;
-      this.notifyListeners();
-      await this.writeToFirebase(newState);
-    }
+    await this.mutate(state => {
+      if (['waiting', 'showdown', 'handComplete'].includes(state.phase)) return state;
+      const player = state.players[state.currentPlayerIndex];
+      if (!player?.isBot || player.isFolded || player.isAllIn) return state;
+      const action = decideBotAction(state, player.id, player.botDifficulty || this.botDifficulty);
+      return action ? processAction(state, player.id, action) : state;
+    });
   }
 
   // =============================================
@@ -207,95 +230,45 @@ export class OnlineGameStore {
   }
 
   async updateConfig(config: GameConfig) {
-    const current = await this.readFromFirebase() || this.state;
-    if (current.phase !== 'waiting') return;
-
-    const normalizedState: GameState = {
-      ...current,
-      config,
-      minRaise: config.bigBlind,
-      lastRaiseSize: config.bigBlind,
-      players: current.players.map((player) => ({
-        ...player,
-        chips: config.initialChips,
-      })),
-    };
-
-    this.state = normalizedState;
-    this.notifyListeners();
-    await this.writeToFirebase(normalizedState);
+    await this.mutate(current => current.phase !== 'waiting' ? current : ({
+      ...current, config, minRaise: config.bigBlind, lastRaiseSize: config.bigBlind,
+      players: current.players.map(player => ({ ...player, chips: config.initialChips })),
+    }));
   }
 
-  // =============================================
-  // AÇÕES: Qualquer um pode chamar
-  // Todas leem do Firebase → modificam → escrevem de volta
-  // =============================================
-
   async hostAddPlayer(name: string, seat: number, isBot: boolean = false) {
-    const current = await this.readFromFirebase() || this.state;
-    const newState = addPlayer(current, name, seat, isBot, isBot ? this.botDifficulty : undefined);
-    this.state = newState;
-    this.notifyListeners();
-    await this.writeToFirebase(newState);
+    await this.mutate(current => addPlayer(current, name, seat, isBot, isBot ? this.botDifficulty : undefined));
   }
 
   async hostRemovePlayer(playerId: string) {
-    const current = await this.readFromFirebase() || this.state;
-    const newState = removePlayer(current, playerId, false);
-    this.state = newState;
-    this.notifyListeners();
-    await this.writeToFirebase(newState);
+    await this.mutate(current => removePlayer(current, playerId, false));
   }
 
-  // Jogador sai da mesa voluntariamente
   async playerLeave(playerId: string) {
-    const current = await this.readFromFirebase() || this.state;
-    const newState = removePlayer(current, playerId, true);
-    this.state = newState;
-    this.notifyListeners();
-    await this.writeToFirebase(newState);
+    await this.sendRequest({ type: 'leave', playerId });
   }
 
   async hostStartHand() {
-    const current = await this.readFromFirebase() || this.state;
-    const newState = startNewHand(current);
-    this.state = newState;
-    this.notifyListeners();
-    await this.writeToFirebase(newState);
+    await this.mutate(startNewHand);
   }
 
   async hostProcessAction(playerId: string, action: PlayerAction) {
-    const current = await this.readFromFirebase() || this.state;
-    const newState = processAction(current, playerId, action);
-    this.state = newState;
-    this.notifyListeners();
-    await this.writeToFirebase(newState);
+    await this.mutate(current => processAction(current, playerId, action));
   }
 
-  // Jogador entrar: lê do Firebase, adiciona, escreve de volta
-  async playerJoin(name: string, seat: number, sessionId?: string) {
-    const current = await this.readFromFirebase();
-    if (!current) {
-      console.error('❌ Sala não encontrada no Firebase');
-      return;
-    }
-    const newState = addPlayer(current, name, seat, false, undefined, sessionId);
-    this.state = newState;
-    this.notifyListeners();
-    await this.writeToFirebase(newState);
+  async playerJoin(name: string, seat: number, _sessionId?: string) {
+    await this.sendRequest({ type: 'join', name, seat });
+    const joined = [...this.state.players, ...this.state.pendingJoins].some(p => p.sessionId === this.uid && p.seat === seat);
+    if (!joined) throw new Error('Assento indisponível. Escolha outro assento.');
   }
 
-  // Jogador agir: lê do Firebase, processa, escreve de volta
   async playerAction(playerId: string, action: PlayerAction) {
-    const current = await this.readFromFirebase();
-    if (!current) return;
-    const newState = processAction(current, playerId, action);
-    this.state = newState;
-    this.notifyListeners();
-    await this.writeToFirebase(newState);
+    await this.sendRequest({ type: 'action', playerId, action: { type: action.type, ...(action.amount === undefined ? {} : { amount: action.amount }) } });
   }
 
   destroy() {
+    this.destroyed = true;
+    this.unsubscribeRequests?.();
     if (this.timerInterval) clearInterval(this.timerInterval);
     if (this.botInterval) clearInterval(this.botInterval);
     if (this.unsubscribeFirebase) this.unsubscribeFirebase();

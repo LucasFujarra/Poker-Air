@@ -11,8 +11,8 @@ import { getSavedPlayerRoom } from '../game/roomHistory';
 interface IGameStore {
   subscribe: (listener: (state: GameState) => void) => () => void;
   getState: () => GameState;
-  playerJoin: (name: string, seat: number, sessionId?: string) => void;
-  playerAction: (playerId: string, action: PlayerAction) => void;
+  playerJoin: (name: string, seat: number, sessionId?: string) => Promise<void>;
+  playerAction: (playerId: string, action: PlayerAction) => Promise<void>;
 }
 
 const SEAT_EMOJIS = ['🎯', '🎲', '🃏', '🎰', '🏆', '💎', '🔥', '⭐', '🎪'];
@@ -38,6 +38,8 @@ export default function JoinRoomScreen({ gameStore, roomId, initialSeat, session
   const [step, setStep] = useState<Step>(initialSelectedSeat >= 0 ? 'name' : 'seat');
   const [gameState, setGameState] = useState<GameState>(gameStore.getState());
   const [selectedSeat, setSelectedSeat] = useState<number>(initialSelectedSeat);
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState('');
   const [playerName, setPlayerName] = useState(savedRoom?.name || '');
 
   useEffect(() => {
@@ -94,10 +96,16 @@ export default function JoinRoomScreen({ gameStore, roomId, initialSeat, session
     setStep('name');
   };
 
-  const handleJoin = () => {
-    if (!playerName.trim() || selectedSeat < 0) return;
-    gameStore.playerJoin(playerName.trim(), selectedSeat, sessionId);
-    onJoined(selectedSeat, playerName.trim());
+  const handleJoin = async () => {
+    if (!playerName.trim() || selectedSeat < 0 || joining) return;
+    setJoining(true);
+    setJoinError('');
+    try {
+      await gameStore.playerJoin(playerName.trim(), selectedSeat, sessionId);
+      onJoined(selectedSeat, playerName.trim());
+    } catch (error) {
+      setJoinError(error instanceof Error ? error.message : 'Não foi possível entrar na sala.');
+    } finally { setJoining(false); }
   };
 
   // ==========================================
@@ -220,16 +228,17 @@ export default function JoinRoomScreen({ gameStore, roomId, initialSeat, session
           autoFocus
         />
         
+        {joinError && <p role="alert" className="text-red-400 text-sm text-center mt-3">{joinError}</p>}
         <button
           onClick={handleJoin}
-          disabled={!playerName.trim()}
+          disabled={!playerName.trim() || joining}
           className={`w-full mt-4 py-4 text-xl font-black rounded-2xl transition-all duration-300 ${
             playerName.trim()
               ? 'bg-gradient-to-b from-green-500 to-green-700 text-white shadow-lg active:scale-95 border border-green-400/30'
               : 'bg-gray-800 text-gray-600 cursor-not-allowed border border-gray-700'
           }`}
         >
-          ENTRAR NA MESA
+          {joining ? 'AGUARDANDO ANFITRIÃO...' : 'ENTRAR NA MESA'}
         </button>
 
         <button

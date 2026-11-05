@@ -138,7 +138,7 @@ export default function ModeSelectScreen({ onSelectOnlineHost, onSelectOnlineJoi
           </div>
           <div className="text-center mb-6">
             <h1 className="text-3xl font-black text-white mb-1">🖥️ Seleção de Sala</h1>
-            <p className="text-gray-500 text-sm">Crie uma nova ou entre em uma existente</p>
+            <p className="text-gray-500 text-sm">Crie uma sala ou retorne a uma das suas</p>
           </div>
           <button onClick={handleCreateRoom} disabled={!canCreate || isCreating}
             className={`w-full py-4 font-black text-xl rounded-2xl transition-all mb-5 ${canCreate && !isCreating ? 'bg-gradient-to-b from-green-500 to-green-700 text-white hover:scale-[1.02] active:scale-95 border border-green-400/30 shadow-lg shadow-green-500/20' : 'bg-gray-800 text-gray-600 cursor-not-allowed border border-gray-700'}`}>
@@ -165,7 +165,7 @@ export default function ModeSelectScreen({ onSelectOnlineHost, onSelectOnlineJoi
           )}
           {activeRooms.length > 0 && (
             <div className="bg-gray-800/40 rounded-2xl border border-gray-700/50 overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-700/50"><span className="text-white font-bold text-sm">Salas Ativas no Servidor</span></div>
+              <div className="px-4 py-3 border-b border-gray-700/50"><span className="text-white font-bold text-sm">Suas Salas Ativas</span></div>
               <div className="divide-y divide-gray-700/30">
                 {activeRooms.map((room) => (
                   <div key={room.code} className="px-4 py-3 flex items-center gap-3">

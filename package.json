@@ -7,7 +7,9 @@
     "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview --host",
-    "deploy": "bash deploy.sh"
+    "deploy": "bash deploy.sh",
+    "test:rules": "firebase emulators:exec --project demo-poker-air --only database \"node tests/database.rules.test.mjs\"",
+    "test:game": "node tests/roomRequests.test.mjs"
   },
   "dependencies": {
     "clsx": "2.1.1",
@@ -19,11 +21,13 @@
     "tailwind-merge": "3.4.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@tailwindcss/vite": "4.1.17",
     "@types/node": "22.19.17",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.1.1",
+    "firebase-tools": "^14.27.0",
     "gh-pages": "^6.3.0",
     "tailwindcss": "4.1.17",
     "typescript": "5.9.3",

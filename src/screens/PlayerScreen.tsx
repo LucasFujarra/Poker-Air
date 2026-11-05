@@ -11,9 +11,9 @@ import type { Card } from '../game/handEvaluator';
 interface IGameStore {
   subscribe: (listener: (state: GameState) => void) => () => void;
   getState: () => GameState;
-  playerJoin: (name: string, seat: number, sessionId?: string) => void;
-  playerAction: (playerId: string, action: PlayerAction) => void;
-  playerLeave: (playerId: string) => void;
+  playerJoin: (name: string, seat: number, sessionId?: string) => Promise<void>;
+  playerAction: (playerId: string, action: PlayerAction) => Promise<void>;
+  playerLeave: (playerId: string) => Promise<void>;
 }
 
 interface PlayerScreenProps {
@@ -131,13 +131,13 @@ export default function PlayerScreen({ seat, gameStore, onLeave }: PlayerScreenP
 
   useEffect(() => { if (isMyTurn && navigator.vibrate) navigator.vibrate([200, 100, 200]); }, [isMyTurn]);
 
-  const handleJoin = useCallback(() => { if (playerName.trim()) { gameStore.playerJoin(playerName.trim(), seat); setIsJoined(true); } }, [playerName, seat, gameStore]);
+  const handleJoin = useCallback(() => { if (playerName.trim()) { void gameStore.playerJoin(playerName.trim(), seat).then(() => setIsJoined(true)).catch(error => window.alert(error.message)); } }, [playerName, seat, gameStore]);
   const handleAction = useCallback((type: PlayerAction['type']) => {
     if (!isMyTurn || !playerId) return;
-    gameStore.playerAction(playerId, type === 'raise' ? { type: 'raise', amount: raiseAmount } : { type });
+    void gameStore.playerAction(playerId, type === 'raise' ? { type: 'raise', amount: raiseAmount } : { type }).catch(error => window.alert(error.message));
     setShowRaiseSlider(false);
   }, [isMyTurn, playerId, raiseAmount, gameStore]);
-  const handleLeave = useCallback(() => { if (playerId) gameStore.playerLeave(playerId); onLeave(); }, [playerId, gameStore, onLeave]);
+  const handleLeave = useCallback(async () => { try { if (playerId) await gameStore.playerLeave(playerId); onLeave(); } catch (error) { window.alert(error instanceof Error ? error.message : 'Não foi possível sair.'); } }, [playerId, gameStore, onLeave]);
 
   const callAmount = turnInfo?.callAmount || 0;
   const canCheck = turnInfo?.canCheck || false;

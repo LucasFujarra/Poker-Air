@@ -4,21 +4,23 @@
 
 import { initializeApp } from 'firebase/app';
 import { getDatabase } from 'firebase/database';
+import { getAuth, signInAnonymously } from 'firebase/auth';
 
 // Configuração do Firebase
 const firebaseConfig = {
-  apiKey: "AIzaSyBB4Z9t8OlP42VEPxMKcHOAtvl9jP52E5M",
-  authDomain: "poker-air.firebaseapp.com",
-  databaseURL: "https://poker-air-default-rtdb.firebaseio.com",
-  projectId: "poker-air",
-  storageBucket: "poker-air.firebasestorage.app",
-  messagingSenderId: "127863266192",
-  appId: "1:127863266192:web:d1acddea4ba863b278b115"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? '',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ?? '',
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL ?? '',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID ?? '',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ?? '',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ?? '',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID ?? ''
 };
 
 // Verificar se as credenciais foram configuradas
 export const isFirebaseConfigured = (): boolean => {
   return (
+    Boolean(firebaseConfig.apiKey && firebaseConfig.databaseURL && firebaseConfig.projectId) &&
     firebaseConfig.apiKey !== "COLE_SUA_API_KEY_AQUI" &&
     !firebaseConfig.databaseURL.includes('SEU_PROJETO')
   );
@@ -49,3 +51,24 @@ export const getFirebaseDatabase = () => {
 };
 
 export { firebaseConfig };
+
+let authentication: Promise<string> | null = null;
+
+export function ensureFirebaseUser(): Promise<string> {
+  if (authentication) return authentication;
+  const { app: firebaseApp } = initFirebase();
+  if (!firebaseApp) return Promise.reject(new Error('Firebase não configurado.'));
+  const auth = getAuth(firebaseApp);
+  authentication = auth.authStateReady().then(async () => {
+    return (auth.currentUser ?? (await signInAnonymously(auth)).user).uid;
+  }).catch((error) => {
+    authentication = null;
+    throw error;
+  });
+  return authentication;
+}
+
+export function getFirebaseUserId(): string {
+  const { app: firebaseApp } = initFirebase();
+  return firebaseApp ? getAuth(firebaseApp).currentUser?.uid ?? '' : '';
+}
